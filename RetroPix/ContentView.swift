@@ -489,37 +489,13 @@ private struct CountdownOSDOverlay: View {
         ZStack {
             Color.black.opacity(0.35)
 
-            VStack(spacing: 8) {
-                // Status pill
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(RetroTheme.red)
-                        .frame(width: 8, height: 8)
-                        .opacity(isBlinking ? 0.2 : 1.0)
-
-                    Text("TIMER ACTIVE")
-                        .font(RetroTheme.mono(10))
-                        .foregroundStyle(RetroTheme.red)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(RetroTheme.panel.opacity(0.85))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(RetroTheme.red.opacity(0.5), lineWidth: 1)
-                        )
-                )
-
-                // Large blinking phosphor numeral
-                Text("\(remaining)")
-                    .font(RetroTheme.mono(88, weight: .heavy))
-                    .foregroundStyle(remaining <= 3 ? RetroTheme.amber : RetroTheme.green)
-                    .scaleEffect(isBlinking ? 1.08 : 0.95)
-                    .shadow(color: (remaining <= 3 ? RetroTheme.amber : RetroTheme.green).opacity(0.8), radius: 12)
-            }
-            .rotationEffect(.degrees(rotation))
+            // Large blinking phosphor numeral
+            Text("\(remaining)")
+                .font(RetroTheme.mono(96, weight: .heavy))
+                .foregroundStyle(remaining <= 3 ? RetroTheme.amber : RetroTheme.green)
+                .scaleEffect(isBlinking ? 1.08 : 0.95)
+                .shadow(color: (remaining <= 3 ? RetroTheme.amber : RetroTheme.green).opacity(0.8), radius: 14)
+                .rotationEffect(.degrees(rotation))
         }
         .allowsHitTesting(false)
         .onAppear {

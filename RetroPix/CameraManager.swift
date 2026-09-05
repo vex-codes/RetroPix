@@ -17,7 +17,9 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private var currentCamera: AVCaptureDevice?   // retained for EV bias updates
 
     private(set) var isTorchOn: Bool = false
-    var hasTorch: Bool { currentCamera?.hasTorch ?? false }
+    var hasTorch: Bool {
+        currentCamera?.hasTorch ?? (AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)?.hasTorch ?? false)
+    }
 
     private let textureLock = NSLock()
     private var _cameraTexture: MTLTexture?
