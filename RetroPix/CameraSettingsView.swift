@@ -51,24 +51,6 @@ struct CameraSettingsView: View {
                         .tint(RetroTheme.green)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 6)
-
-                        // ── Aspect Ratio Picker ──────────────────────────────
-                        SectionHeader(title: "FRAME ASPECT RATIO", sub: "Select sensor crop & internal grid")
-
-                        HStack(spacing: 10) {
-                            ForEach(AspectRatio.allCases) { ratio in
-                                RatioButton(
-                                    label: ratio.displayLabel,
-                                    isActive: vm.activeRatio == ratio
-                                ) {
-                                    vm.activeRatio = ratio
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 6)
-
                         Divider().background(RetroTheme.border).padding(.vertical, 16)
 
                         // ── Palette Creation & Generation ─────────────────────
@@ -161,59 +143,6 @@ struct CameraSettingsView: View {
                             .padding(.top, 6)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 6)
-
-                        Divider().background(RetroTheme.border).padding(.vertical, 16)
-
-                        // ── Dither & Grain Engine ─────────────────────────────
-                        SectionHeader(title: "DITHER & GRAIN ENGINE", sub: "Bayer 8×8 ordered dither")
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("SPREAD")
-                                    .font(RetroTheme.mono(10))
-                                    .foregroundStyle(RetroTheme.dimText)
-                                Spacer()
-                                Text("\(Int(vm.ditherIntensity * 100))%")
-                                    .font(RetroTheme.mono(13))
-                                    .foregroundStyle(RetroTheme.amber)
-                                    .frame(minWidth: 44, alignment: .trailing)
-                            }
-
-                            Slider(
-                                value: Binding(
-                                    get: { Double(vm.ditherIntensity) },
-                                    set: { vm.ditherIntensity = Float($0) }
-                                ),
-                                in: 0...1
-                            )
-                            .tint(RetroTheme.green)
-
-                            // Quick preset buttons
-                            HStack(spacing: 8) {
-                                ForEach(["OFF", "50%", "75%", "100%"], id: \.self) { label in
-                                    let val: Float = label == "OFF" ? 0 : label == "50%" ? 0.5 : label == "75%" ? 0.75 : 1.0
-                                    Button(label) {
-                                        vm.ditherIntensity = val
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    }
-                                    .font(RetroTheme.mono(9))
-                                    .foregroundStyle(vm.ditherLabel == label ? RetroTheme.bg : RetroTheme.green)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 3)
-                                            .fill(vm.ditherLabel == label ? RetroTheme.green : Color.clear)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .stroke(RetroTheme.green.opacity(0.5), lineWidth: 1)
-                                            )
-                                    )
-                                }
-                                Spacer()
-                            }
-                        }
-                        .padding(.horizontal, 20)
                         .padding(.bottom, 32)
                     }
                 }
