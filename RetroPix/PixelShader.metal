@@ -42,20 +42,9 @@ kernel void pixelKernel(
     float nx = (float(gid.x) + 0.5) / float(outputSize.x);
     float ny = (float(gid.y) + 0.5) / float(outputSize.y);
 
-    float u, v;
-    if (orientation == 1u) {
-        // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
-        u = cropUV.x + ny * (cropUV.z - cropUV.x);
-        v = cropUV.w - nx * (cropUV.w - cropUV.y);
-    } else if (orientation == 2u) {
-        // Landscape Left: 180° rotation
-        u = cropUV.z - nx * (cropUV.z - cropUV.x);
-        v = cropUV.w - ny * (cropUV.w - cropUV.y);
-    } else {
-        // Landscape Right: default native sensor orientation
-        u = cropUV.x + nx * (cropUV.z - cropUV.x);
-        v = cropUV.y + ny * (cropUV.w - cropUV.y);
-    }
+    // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
+    float u = cropUV.x + ny * (cropUV.z - cropUV.x);
+    float v = cropUV.w - nx * (cropUV.w - cropUV.y);
 
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float3 color = cameraTexture.sample(s, float2(u, v)).rgb;

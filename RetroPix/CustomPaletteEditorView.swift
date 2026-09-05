@@ -134,42 +134,6 @@ struct CustomPaletteEditorView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
                         .buttonStyle(.plain)
-
-                        // Existing custom palettes section
-                        if !vm.customPalettes.isEmpty {
-                            Divider().background(RetroTheme.border).padding(.vertical, 8)
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("SAVED CUSTOM PALETTES")
-                                    .font(RetroTheme.mono(10))
-                                    .foregroundStyle(RetroTheme.dimText)
-
-                                ForEach(vm.customPalettes) { pal in
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(pal.name)
-                                                .font(RetroTheme.mono(11))
-                                                .foregroundStyle(.white)
-                                            ColorSwatchBar(palette: pal, height: 14)
-                                                .frame(width: 140)
-                                        }
-                                        Spacer()
-                                        Button {
-                                            vm.deleteCustomPalette(id: pal.id)
-                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                        } label: {
-                                            Text("DELETE")
-                                                .font(RetroTheme.mono(9))
-                                                .foregroundStyle(RetroTheme.red)
-                                                .padding(6)
-                                        }
-                                    }
-                                    .padding(10)
-                                    .background(RetroTheme.panel)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                }
-                            }
-                        }
                     }
                     .padding(20)
                 }

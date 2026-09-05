@@ -19,14 +19,6 @@ final class CameraViewModel {
 
     var palettes: [Palette] = Palette.loadPalettes()
 
-    var allPalettes: [Palette] {
-        palettes
-    }
-
-    var customPalettes: [Palette] {
-        get { palettes }
-        set { palettes = newValue }
-    }
 
     var activePalette: Palette {
         guard !palettes.isEmpty else { return Palette.def }
@@ -36,7 +28,7 @@ final class CameraViewModel {
 
     /// Internal rendering resolution for active ratio and orientation
     var outputSize: (w: Int, h: Int) {
-        activeRatio.outputSize(portrait: isPortrait)
+        activeRatio.outputSize
     }
 
     /// Human-readable label for the current dither value — snaps to nearest preset label.
@@ -93,9 +85,6 @@ final class CameraViewModel {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
-    func deleteCustomPalette(id: String) {
-        deletePalette(id: id)
-    }
 
     func renamePalette(id: String, newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -113,12 +102,6 @@ final class CameraViewModel {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    func reloadCustomPalettes() {
-        palettes = Palette.loadPalettes()
-        if activePaletteIndex >= palettes.count {
-            activePaletteIndex = max(0, palettes.count - 1)
-        }
-    }
 
     // MARK: — Camera Controls
 

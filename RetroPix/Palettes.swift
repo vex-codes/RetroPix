@@ -166,8 +166,5 @@ struct Palette: Identifiable, Codable, Equatable, Sendable {
         savePalettes(Palette.all)
         return Palette.all
     }
-
-    // Backwards compatibility
-    static func loadCustomPalettes() -> [Palette] { loadPalettes() }
-    static func saveCustomPalettes(_ palettes: [Palette]) { savePalettes(palettes) }
 }
+

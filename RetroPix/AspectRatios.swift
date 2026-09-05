@@ -12,15 +12,13 @@ enum AspectRatio: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var displayLabel: String { rawValue }
 
-    func outputSize(portrait: Bool) -> (w: Int, h: Int) {
-        let (lw, lh): (Int, Int)
+    var outputSize: (w: Int, h: Int) {
         switch self {
-        case .ratio2_1:  (lw, lh) = (256, 128)
-        case .ratio1_1:  (lw, lh) = (192, 192)
-        case .ratio4_3:  (lw, lh) = (240, 180)
-        case .ratio16_9: (lw, lh) = (256, 144)
+        case .ratio2_1:  return (128, 256)
+        case .ratio1_1:  return (192, 192)
+        case .ratio4_3:  return (180, 240)
+        case .ratio16_9: return (144, 256)
         }
-        return portrait ? (lh, lw) : (lw, lh)
     }
 
     /// Crop UV bounds (u0, v0, u1, v1) for 1280×720 camera buffer
