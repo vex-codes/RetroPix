@@ -98,6 +98,16 @@ final class CameraViewModel {
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
+    func updatePalette(_ palette: Palette) {
+        if let idx = palettes.firstIndex(where: { $0.id == palette.id }) {
+            palettes[idx] = palette
+            Palette.savePalettes(palettes)
+            activePaletteIndex = idx
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } else {
+            addCustomPalette(palette)
+        }
+    }
 
 
     func renamePalette(id: String, newName: String) {

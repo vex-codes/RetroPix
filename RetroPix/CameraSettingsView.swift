@@ -9,9 +9,7 @@ struct CameraSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showPaletteEditor = false
 
-    @State private var showRenameAlert = false
-    @State private var paletteToRename: Palette?
-    @State private var renameText = ""
+    @State private var paletteToEdit: Palette? = nil
 
     var body: some View {
         NavigationStack {
@@ -77,6 +75,7 @@ struct CameraSettingsView: View {
                             .buttonStyle(.plain)
 
                             Button {
+                                paletteToEdit = nil
                                 showPaletteEditor = true
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             } label: {
@@ -102,7 +101,7 @@ struct CameraSettingsView: View {
                         Divider().background(RetroTheme.border).padding(.vertical, 14)
 
                         // ── Palette Configuration & Management ────────────────
-                        SectionHeader(title: "PALETTE MANAGEMENT", sub: "Tap to activate. Rename or delete below.")
+                        SectionHeader(title: "PALETTE MANAGEMENT", sub: "Tap to activate. Edit or delete below.")
 
                         VStack(spacing: 10) {
                             ForEach(Array(vm.palettes.enumerated()), id: \.element.id) { idx, palette in
@@ -114,10 +113,10 @@ struct CameraSettingsView: View {
                                         vm.activePaletteIndex = idx
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                     },
-                                    onRename: {
-                                        paletteToRename = palette
-                                        renameText = palette.name
-                                        showRenameAlert = true
+                                    onEdit: {
+                                        paletteToEdit = palette
+                                        showPaletteEditor = true
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     },
                                     onDelete: {
                                         vm.deletePalette(id: palette.id)
@@ -155,16 +154,7 @@ struct CameraSettingsView: View {
                 }
             }
             .sheet(isPresented: $showPaletteEditor) {
-                CustomPaletteEditorView(vm: vm)
-            }
-            .alert("RENAME PALETTE", isPresented: $showRenameAlert) {
-                TextField("NEW NAME", text: $renameText)
-                Button("CANCEL", role: .cancel) {}
-                Button("SAVE") {
-                    if let pal = paletteToRename {
-                        vm.renamePalette(id: pal.id, newName: renameText)
-                    }
-                }
+                CustomPaletteEditorView(vm: vm, paletteToEdit: paletteToEdit)
             }
         }
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)
@@ -198,7 +188,7 @@ private struct PaletteCard: View {
     let isActive: Bool
     let canDelete: Bool
     let onTap: () -> Void
-    let onRename: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -222,8 +212,8 @@ private struct PaletteCard: View {
 
                 Spacer()
 
-                // Rename button
-                Button(action: onRename) {
+                // Edit button
+                Button(action: onEdit) {
                     Text("[EDIT]")
                         .font(RetroTheme.mono(9))
                         .foregroundStyle(RetroTheme.green)

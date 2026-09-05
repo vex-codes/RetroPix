@@ -5,16 +5,31 @@ import SwiftUI
 
 struct CustomPaletteEditorView: View {
     var vm: CameraViewModel
+    var paletteToEdit: Palette? = nil
     @Environment(\.dismiss) private var dismiss
 
-    @State private var paletteName: String = "CUSTOM_\(Int.random(in: 10...99))"
-    @State private var colors: [Color] = [
-        Color(hex: 0x111115),
-        Color(hex: 0x3d3550),
-        Color(hex: 0x785684),
-        Color(hex: 0xd896a0),
-        Color(hex: 0xf5eed8),
-    ]
+    @State private var paletteName: String
+    @State private var colors: [Color]
+
+    init(vm: CameraViewModel, paletteToEdit: Palette? = nil) {
+        self.vm = vm
+        self.paletteToEdit = paletteToEdit
+        if let pal = paletteToEdit {
+            _paletteName = State(initialValue: pal.name)
+            _colors = State(initialValue: pal.colors.map {
+                Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b))
+            })
+        } else {
+            _paletteName = State(initialValue: "CUSTOM_\(Int.random(in: 10...99))")
+            _colors = State(initialValue: [
+                Color(hex: 0x111115),
+                Color(hex: 0x3d3550),
+                Color(hex: 0x785684),
+                Color(hex: 0xd896a0),
+                Color(hex: 0xf5eed8),
+            ])
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -26,7 +41,7 @@ struct CustomPaletteEditorView: View {
 
                         // Header
                         HStack {
-                            Text("PALETTE STUDIO")
+                            Text(paletteToEdit != nil ? "EDIT PALETTE" : "PALETTE STUDIO")
                                 .font(RetroTheme.mono(18, weight: .black))
                                 .foregroundStyle(RetroTheme.amber)
                             Spacer()
@@ -159,10 +174,15 @@ struct CustomPaletteEditorView: View {
         sortLuminance()
         let retro = colors.map { retroColor(from: $0) }
         let name = paletteName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalName = name.isEmpty ? "CUSTOM" : name
-        let palette = Palette(id: "usr_\(UUID().uuidString.prefix(8))", name: finalName, colors: retro)
+        let finalName = name.isEmpty ? (paletteToEdit?.name ?? "CUSTOM") : name
 
-        vm.addCustomPalette(palette)
+        if let existing = paletteToEdit {
+            let updated = Palette(id: existing.id, name: finalName, colors: retro)
+            vm.updatePalette(updated)
+        } else {
+            let palette = Palette(id: "usr_\(UUID().uuidString.prefix(8))", name: finalName, colors: retro)
+            vm.addCustomPalette(palette)
+        }
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
         dismiss()
     }
