@@ -14,21 +14,18 @@ struct CustomPaletteEditorView: View {
     init(vm: CameraViewModel, paletteToEdit: Palette? = nil) {
         self.vm = vm
         self.paletteToEdit = paletteToEdit
-        if let pal = paletteToEdit {
-            _paletteName = State(initialValue: pal.name)
-            _colors = State(initialValue: pal.colors.map {
-                Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b))
-            })
-        } else {
-            _paletteName = State(initialValue: "CUSTOM_\(Int.random(in: 10...99))")
-            _colors = State(initialValue: [
-                Color(hex: 0x111115),
-                Color(hex: 0x3d3550),
-                Color(hex: 0x785684),
-                Color(hex: 0xd896a0),
-                Color(hex: 0xf5eed8),
-            ])
-        }
+        let initialName = paletteToEdit?.name ?? "CUSTOM_\(Int.random(in: 10...99))"
+        let initialColors = paletteToEdit?.colors.map {
+            Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b))
+        } ?? [
+            Color(hex: 0x111115),
+            Color(hex: 0x3d3550),
+            Color(hex: 0x785684),
+            Color(hex: 0xd896a0),
+            Color(hex: 0xf5eed8),
+        ]
+        _paletteName = State(initialValue: initialName)
+        _colors = State(initialValue: initialColors)
     }
 
     var body: some View {
@@ -41,9 +38,11 @@ struct CustomPaletteEditorView: View {
 
                         // Header
                         HStack {
-                            Text(paletteToEdit != nil ? "EDIT PALETTE" : "PALETTE STUDIO")
+                            Text(paletteToEdit != nil ? "EDIT \(paletteToEdit!.name)" : "PALETTE STUDIO")
                                 .font(RetroTheme.mono(18, weight: .black))
                                 .foregroundStyle(RetroTheme.amber)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                             Spacer()
                         }
                         .padding(.top, 16)
@@ -162,6 +161,14 @@ struct CustomPaletteEditorView: View {
             }
         }
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)
+        .onAppear {
+            if let pal = paletteToEdit {
+                paletteName = pal.name
+                colors = pal.colors.map {
+                    Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b))
+                }
+            }
+        }
     }
 
     private func sortLuminance() {

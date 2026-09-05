@@ -4,12 +4,15 @@
 
 import SwiftUI
 
+struct PaletteEditorTarget: Identifiable {
+    let id: String
+    let palette: Palette?
+}
+
 struct CameraSettingsView: View {
     var vm: CameraViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var showPaletteEditor = false
-
-    @State private var paletteToEdit: Palette? = nil
+    @State private var editorTarget: PaletteEditorTarget? = nil
 
     var body: some View {
         NavigationStack {
@@ -49,6 +52,7 @@ struct CameraSettingsView: View {
                         .tint(RetroTheme.green)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 6)
+
                         Divider().background(RetroTheme.border).padding(.vertical, 16)
 
                         // ── Palette Creation & Generation ─────────────────────
@@ -75,8 +79,7 @@ struct CameraSettingsView: View {
                             .buttonStyle(.plain)
 
                             Button {
-                                paletteToEdit = nil
-                                showPaletteEditor = true
+                                editorTarget = PaletteEditorTarget(id: "new_\(UUID().uuidString)", palette: nil)
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             } label: {
                                 Text("[ + CUSTOM STUDIO ]")
@@ -114,8 +117,7 @@ struct CameraSettingsView: View {
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                     },
                                     onEdit: {
-                                        paletteToEdit = palette
-                                        showPaletteEditor = true
+                                        editorTarget = PaletteEditorTarget(id: palette.id, palette: palette)
                                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     },
                                     onDelete: {
@@ -153,8 +155,9 @@ struct CameraSettingsView: View {
                         .foregroundStyle(RetroTheme.red)
                 }
             }
-            .sheet(isPresented: $showPaletteEditor) {
-                CustomPaletteEditorView(vm: vm, paletteToEdit: paletteToEdit)
+            .sheet(item: $editorTarget) { target in
+                CustomPaletteEditorView(vm: vm, paletteToEdit: target.palette)
+                    .id(target.id)
             }
         }
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)
