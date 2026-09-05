@@ -1,5 +1,5 @@
 // ContentView.swift
-// RetroPix — Primary layout: Metal feed behind an orientation-adaptive retro OSD + control deck.
+// RetroPix — Primary layout: Portrait-anchored retro OSD with Apple Camera-style icon rotation.
 
 import AudioToolbox
 import AVFoundation
@@ -9,104 +9,83 @@ import SwiftUI
 // MARK: — Root
 
 struct ContentView: View {
-    @State private var vm            = CameraViewModel()
-    @State private var cameraManager = CameraManager()
+    @State private var vm                  = CameraViewModel()
+    @State private var cameraManager       = CameraManager()
     @State private var renderer: MetalRenderer?
-    @State private var isCapturing   = false
-    @State private var showSettings  = false
-    @State private var shutterFlash  = 0.0
+    @State private var isCapturing         = false
+    @State private var showSettings        = false
+    @State private var shutterFlash        = 0.0
+    @State private var orientationObserver = DeviceOrientationObserver()
 
     var body: some View {
-        GeometryReader { geo in
-            let isPortrait = geo.size.height > geo.size.width
-            let orientation: UInt32 = isPortrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
+        let rotation = orientationObserver.uiRotationAngle
 
-            ZStack {
-                // Base background
-                Color.black.ignoresSafeArea()
+        ZStack {
+            // Base background
+            Color.black.ignoresSafeArea()
 
-                // Main vertical flow: Top Bar → Viewfinder Frame → Control Deck
-                VStack(spacing: 0) {
-                    TopOSDBar(vm: vm, onMenu: { showSettings = true })
+            // Main vertical layout: Top Bar → Viewfinder Frame → Control Deck
+            VStack(spacing: 0) {
+                TopOSDBar(vm: vm, rotation: rotation, onMenu: { showSettings = true })
 
-                    // Middle Viewfinder container: strict aspect ratio fit, pinch to zoom
-                    let (w, h) = vm.outputSize
-                    let aspect = CGFloat(w) / CGFloat(h)
+                // Viewfinder container: strict aspect ratio fit, pinch to zoom
+                let (w, h) = vm.outputSize
+                let aspect = CGFloat(w) / CGFloat(h)
 
-                    ZStack {
-                        Color.black
+                ZStack {
+                    Color.black
 
-                        if let renderer {
-                            ZStack {
-                                MetalView(renderer: renderer)
-                                CrosshairOverlay()
-                            }
-                            .aspectRatio(aspect, contentMode: .fit)
-                            .clipped()
+                    if let renderer {
+                        ZStack {
+                            MetalView(renderer: renderer)
+                            CrosshairOverlay()
                         }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                vm.updateZoom(magnification: value)
-                            }
-                            .onEnded { _ in
-                                vm.commitZoom()
-                            }
-                    )
-
-                    // Bottom controls
-                    if isPortrait {
-                        PortraitDeck(vm: vm, onShutter: triggerCapture)
-                    } else {
-                        BottomDeck(vm: vm, onShutter: triggerCapture)
+                        .aspectRatio(aspect, contentMode: .fit)
+                        .clipped()
                     }
                 }
-                .ignoresSafeArea(edges: .bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            vm.updateZoom(magnification: value)
+                        }
+                        .onEnded { _ in
+                            vm.commitZoom()
+                        }
+                )
 
-                // Shutter white flash overlay
-                if shutterFlash > 0 {
-                    Color.white
-                        .opacity(shutterFlash)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                }
+                // Bottom control deck
+                PortraitDeck(vm: vm, rotation: rotation, onShutter: triggerCapture)
             }
-            .onAppear {
-                vm.isPortrait = isPortrait
-                vm.orientation = orientation
-                updateRendererConfig()
-            }
-            .onChange(of: geo.size) { _, newSize in
-                let portrait = newSize.height > newSize.width
-                let orient: UInt32 = portrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
-                vm.isPortrait = portrait
-                vm.orientation = orient
-                updateRendererConfig()
+            .ignoresSafeArea(edges: .bottom)
+
+            // Shutter white flash overlay
+            if shutterFlash > 0 {
+                Color.white
+                    .opacity(shutterFlash)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
             }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onAppear(perform: setupRenderer)
-        .onDisappear { cameraManager.stopSession() }
+        .onAppear {
+            vm.isPortrait = true
+            vm.orientation = 1
+            setupRenderer()
+        }
+        .onDisappear {
+            cameraManager.stopSession()
+            orientationObserver.stop()
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in cameraManager.stopSession() }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
         ) { _ in cameraManager.startSession() }
-        .onReceive(
-            NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
-        ) { _ in
-            let isPortrait = vm.isPortrait
-            let orient: UInt32 = isPortrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
-            if vm.orientation != orient {
-                vm.orientation = orient
-                updateRendererConfig()
-            }
-        }
         // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
         .onChange(of: vm.activePaletteIndex) { _, _ in
             renderer?.updatePalette(vm.activePalette)
@@ -142,7 +121,7 @@ struct ContentView: View {
     private func updateRendererConfig() {
         let (w, h) = vm.outputSize
         let crop = vm.activeRatio.cropUV
-        renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: vm.orientation)
+        renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
     }
@@ -164,7 +143,10 @@ struct ContentView: View {
 
         Task {
             defer { isCapturing = false }
-            try? await CaptureService.capture(from: renderer)
+            try? await CaptureService.capture(
+                from: renderer,
+                orientation: orientationObserver.orientation
+            )
         }
     }
 }
@@ -173,6 +155,7 @@ struct ContentView: View {
 
 private struct TopOSDBar: View {
     var vm: CameraViewModel
+    let rotation: Double
     let onMenu: () -> Void
 
     var body: some View {
@@ -187,6 +170,7 @@ private struct TopOSDBar: View {
                         vm.activeRatio = ratio
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
+                    .rotationEffect(.degrees(rotation))
                 }
             }
 
@@ -211,6 +195,7 @@ private struct TopOSDBar: View {
                             )
                     )
             }
+            .rotationEffect(.degrees(rotation))
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -218,47 +203,11 @@ private struct TopOSDBar: View {
     }
 }
 
-// MARK: — Bottom control deck (Landscape)
-
-private struct BottomDeck: View {
-    var vm: CameraViewModel
-    let onShutter: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            PaletteCycler(vm: vm)
-                .frame(maxWidth: .infinity)
-
-            DeckDivider()
-
-            EVStepper(vm: vm)
-                .frame(maxWidth: .infinity)
-
-            DeckDivider()
-
-            DiamondToggle(vm: vm)
-                .frame(maxWidth: .infinity)
-
-            DeckDivider()
-
-            // Shutter
-            VStack(spacing: 4) {
-                ShutterButton(action: onShutter)
-                Text("SHUTTER")
-                    .font(RetroTheme.mono(7))
-                    .foregroundStyle(RetroTheme.dimText)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .frame(height: 72)
-        .background(RetroTheme.bg.opacity(0.95))
-    }
-}
-
-// MARK: — Portrait Deck (4 rows)
+// MARK: — Bottom control deck
 
 private struct PortraitDeck: View {
     var vm: CameraViewModel
+    let rotation: Double
     let onShutter: () -> Void
 
     var body: some View {
@@ -269,11 +218,15 @@ private struct PortraitDeck: View {
                 Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)")
                     .font(RetroTheme.mono(9))
                     .foregroundStyle(RetroTheme.amber)
+                    .rotationEffect(.degrees(rotation))
+
                 Spacer()
+
                 let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
                 Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
                     .font(RetroTheme.mono(8, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
+                    .rotationEffect(.degrees(rotation))
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -281,17 +234,17 @@ private struct PortraitDeck: View {
             Divider().background(RetroTheme.border)
 
             // Row 2: Palette Cycler
-            PaletteCycler(vm: vm)
+            PaletteCycler(vm: vm, rotation: rotation)
                 .padding(.horizontal, 14)
 
             // Row 3: Exposure + Dither
             HStack(spacing: 0) {
-                EVStepper(vm: vm)
+                EVStepper(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
 
                 DeckDivider()
 
-                DiamondToggle(vm: vm)
+                DiamondToggle(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
             }
             .frame(height: 44)
@@ -302,6 +255,7 @@ private struct PortraitDeck: View {
                 Text("SHUTTER")
                     .font(RetroTheme.mono(7))
                     .foregroundStyle(RetroTheme.dimText)
+                    .rotationEffect(.degrees(rotation))
             }
             .padding(.bottom, 24)
         }
@@ -313,11 +267,14 @@ private struct PortraitDeck: View {
 
 private struct PaletteCycler: View {
     var vm: CameraViewModel
+    let rotation: Double
 
     var body: some View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
-                ArrowBtn(symbol: "<") { vm.cyclePalette(forward: false) }
+                ArrowBtn(symbol: "<", rotation: rotation) {
+                    vm.cyclePalette(forward: false)
+                }
 
                 Text(vm.activePalette.name)
                     .font(RetroTheme.mono(11))
@@ -325,8 +282,11 @@ private struct PaletteCycler: View {
                     .frame(minWidth: 90, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .rotationEffect(.degrees(rotation))
 
-                ArrowBtn(symbol: ">") { vm.cyclePalette(forward: true) }
+                ArrowBtn(symbol: ">", rotation: rotation) {
+                    vm.cyclePalette(forward: true)
+                }
             }
             ColorSwatchBar(palette: vm.activePalette, height: 6)
                 .padding(.horizontal, 6)
@@ -338,10 +298,13 @@ private struct PaletteCycler: View {
 
 private struct EVStepper: View {
     var vm: CameraViewModel
+    let rotation: Double
 
     var body: some View {
         HStack(spacing: 8) {
-            ArrowBtn(symbol: "−") { vm.stepEV(up: false) }
+            ArrowBtn(symbol: "−", rotation: rotation) {
+                vm.stepEV(up: false)
+            }
 
             VStack(spacing: 1) {
                 Text(String(format: "%+.1f", vm.evBias))
@@ -352,8 +315,11 @@ private struct EVStepper: View {
                     .font(RetroTheme.mono(7, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
+            .rotationEffect(.degrees(rotation))
 
-            ArrowBtn(symbol: "+") { vm.stepEV(up: true) }
+            ArrowBtn(symbol: "+", rotation: rotation) {
+                vm.stepEV(up: true)
+            }
         }
     }
 }
@@ -362,6 +328,7 @@ private struct EVStepper: View {
 
 private struct DiamondToggle: View {
     var vm: CameraViewModel
+    let rotation: Double
 
     var body: some View {
         Button(action: vm.cycleDither) {
@@ -373,6 +340,7 @@ private struct DiamondToggle: View {
                     .font(RetroTheme.mono(7, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
+            .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
@@ -383,6 +351,7 @@ private struct DiamondToggle: View {
 
 private struct ArrowBtn: View {
     let symbol: String
+    let rotation: Double
     let action: () -> Void
 
     var body: some View {
@@ -391,6 +360,7 @@ private struct ArrowBtn: View {
                 .font(RetroTheme.mono(14))
                 .foregroundStyle(RetroTheme.green)
                 .frame(width: 32, height: 44)
+                .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
     }
