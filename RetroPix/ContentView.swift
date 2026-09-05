@@ -37,7 +37,7 @@ struct ContentView: View {
 
                     if let renderer {
                         ZStack {
-                            MetalView(renderer: renderer)
+                            MetalView(renderer: renderer, isPaused: showSettings)
                             CrosshairOverlay()
                         }
                         .aspectRatio(aspect, contentMode: .fit)
@@ -81,10 +81,27 @@ struct ContentView: View {
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
-        ) { _ in cameraManager.stopSession() }
+        ) { _ in 
+            cameraManager.stopSession()
+            orientationObserver.stop()
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
-        ) { _ in cameraManager.startSession() }
+        ) { _ in 
+            if !showSettings {
+                cameraManager.startSession()
+                orientationObserver.start()
+            }
+        }
+        .onChange(of: showSettings) { _, open in
+            if open {
+                cameraManager.stopSession()
+                orientationObserver.stop()
+            } else {
+                cameraManager.startSession()
+                orientationObserver.start()
+            }
+        }
         // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
         .onChange(of: vm.activePaletteIndex) { _, _ in
             renderer?.updatePalette(vm.activePalette)
@@ -366,19 +383,17 @@ final class ShutterAudioService: @unchecked Sendable {
     private var player: AVAudioPlayer?
 
     private init() {
+        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
         let wav = createShutterWav()
         player = try? AVAudioPlayer(data: wav)
         player?.prepareToPlay()
     }
 
     func play() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
-        if let player, player.isPlaying {
+        if let player {
             player.currentTime = 0
             player.play()
-        } else {
-            player?.play()
         }
         AudioServicesPlaySystemSound(1108)
     }

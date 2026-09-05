@@ -25,26 +25,29 @@ constant int bayer8[64] = {
 // ---------------------------------------------------------------------------
 // MARK: — Compute kernel: camera → dynamic dithered pixel art
 // ---------------------------------------------------------------------------
+struct KernelUniforms {
+    float4 cropUV;
+    uint2  outputSize;
+    float  ditherSpread;
+    uint   paletteCount;
+};
+
 kernel void pixelKernel(
     texture2d<float, access::sample>  cameraTexture  [[texture(0)]],
     texture2d<float, access::write>   outputTexture  [[texture(1)]],
     constant float4                  *palette        [[buffer(0)]],   // up to 8 × float4(r,g,b,0)
-    constant uint                    &paletteCount   [[buffer(1)]],
-    constant float                   &ditherSpread   [[buffer(2)]],   // 0.0–1.0 from CameraViewModel
-    constant uint2                   &outputSize     [[buffer(3)]],   // internal resolution (e.g. 256×128)
-    constant float4                  &cropUV         [[buffer(4)]],   // crop bounds: (u0, v0, u1, v1)
-    constant uint                    &orientation    [[buffer(5)]],   // 0: landscapeRight, 1: portrait, 2: landscapeLeft
+    constant KernelUniforms          &uniforms       [[buffer(1)]],
     uint2                             gid            [[thread_position_in_grid]])
 {
-    if (gid.x >= outputSize.x || gid.y >= outputSize.y) return;
+    if (gid.x >= uniforms.outputSize.x || gid.y >= uniforms.outputSize.y) return;
 
     // --- 1. Compute normalized sample coordinates inside output grid ---
-    float nx = (float(gid.x) + 0.5) / float(outputSize.x);
-    float ny = (float(gid.y) + 0.5) / float(outputSize.y);
+    float nx = (float(gid.x) + 0.5) / float(uniforms.outputSize.x);
+    float ny = (float(gid.y) + 0.5) / float(uniforms.outputSize.y);
 
     // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
-    float u = cropUV.x + ny * (cropUV.z - cropUV.x);
-    float v = cropUV.w - nx * (cropUV.w - cropUV.y);
+    float u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
+    float v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
 
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float3 color = cameraTexture.sample(s, float2(u, v)).rgb;
@@ -55,12 +58,12 @@ kernel void pixelKernel(
     float threshold = (float(bayer8[by * 8 + bx]) / 63.0) - 0.5;
 
     // --- 3. Apply dither offset to each RGB channel ---
-    float3 dithered = clamp(color + threshold * ditherSpread, 0.0, 1.0);
+    float3 dithered = clamp(color + threshold * uniforms.ditherSpread, 0.0, 1.0);
 
     // --- 4. Palette quantize — nearest color in Euclidean RGB space ---
     float  minDist = 1e9;
     float3 bestColor = palette[0].rgb;
-    for (uint i = 0u; i < paletteCount; i++) {
+    for (uint i = 0u; i < uniforms.paletteCount; i++) {
         float3 diff = dithered - palette[i].rgb;
         float  dist = dot(diff, diff);
         if (dist < minDist) {

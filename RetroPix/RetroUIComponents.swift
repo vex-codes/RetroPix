@@ -49,6 +49,7 @@ enum RetroTheme {
 struct ShutterButton: View {
     let action: () -> Void
     @GestureState private var pressed = false
+    private let haptic = UIImpactFeedbackGenerator(style: .rigid)
 
     var body: some View {
         ZStack {
@@ -72,6 +73,7 @@ struct ShutterButton: View {
         .contentShape(Circle().size(CGSize(width: 64, height: 64)))
         .gesture(
             DragGesture(minimumDistance: 0)
+                .onChanged { _ in haptic.prepare() }
                 .updating($pressed) { _, state, _ in state = true }
                 .onEnded { _ in action() }
         )

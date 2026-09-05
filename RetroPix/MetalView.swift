@@ -8,12 +8,13 @@ import SwiftUI
 
 struct MetalView: UIViewRepresentable {
     let renderer: MetalRenderer
+    var isPaused: Bool = false
 
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView(frame: .zero, device: renderer.device)
         view.delegate                    = renderer
-        view.preferredFramesPerSecond    = 60
-        view.isPaused                    = false
+        view.preferredFramesPerSecond    = 30
+        view.isPaused                    = isPaused
         view.enableSetNeedsDisplay       = false
         view.framebufferOnly             = true   // drawable is render-target only
         view.colorPixelFormat            = .bgra8Unorm
@@ -23,5 +24,9 @@ struct MetalView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: MTKView, context: Context) {}
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        if uiView.isPaused != isPaused {
+            uiView.isPaused = isPaused
+        }
+    }
 }

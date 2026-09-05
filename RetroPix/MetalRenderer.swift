@@ -9,6 +9,13 @@
 
 import MetalKit
 
+private struct ShaderUniforms {
+    var cropUV: SIMD4<Float>
+    var outputSize: SIMD2<UInt32>
+    var ditherSpread: Float
+    var paletteCount: UInt32
+}
+
 final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Metal objects
@@ -152,15 +159,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             enc.setTexture(cameraTexture, index: 0)
             enc.setTexture(pixelTexture,  index: 1)
             enc.setBuffer(paletteBuffer, offset: 0, index: 0)
-            enc.setBytes(&paletteCount, length: MemoryLayout<UInt32>.size, index: 1)
-            var spread = ditherSpread
-            enc.setBytes(&spread, length: MemoryLayout<Float>.size, index: 2)
-            var size = SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight))
-            enc.setBytes(&size, length: MemoryLayout<SIMD2<UInt32>>.size, index: 3)
-            var crop = cropUV
-            enc.setBytes(&crop, length: MemoryLayout<SIMD4<Float>>.size, index: 4)
-            var orient = orientation
-            enc.setBytes(&orient, length: MemoryLayout<UInt32>.size, index: 5)
+            var uniforms = ShaderUniforms(
+                cropUV: cropUV,
+                outputSize: SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight)),
+                ditherSpread: ditherSpread,
+                paletteCount: paletteCount
+            )
+            enc.setBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 1)
 
             let tg    = MTLSize(width: 8, height: 8, depth: 1)
             let tgrid = MTLSize(width: (outputWidth + 7) / 8, height: (outputHeight + 7) / 8, depth: 1)

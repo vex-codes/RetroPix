@@ -65,8 +65,15 @@ final class CameraManager: NSObject, @unchecked Sendable {
             }
             session.addInput(input)
 
-            // Minimal processing — continuous AF/AE, no torch, no smoothing
+            // Minimal processing — continuous AF/AE, 30 FPS cap for efficiency + retro cadence
             try? camera.lockForConfiguration()
+            let frameDuration = CMTime(value: 1, timescale: 30)
+            if camera.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+                $0.minFrameDuration <= frameDuration && frameDuration <= $0.maxFrameDuration
+            }) {
+                camera.activeVideoMinFrameDuration = frameDuration
+                camera.activeVideoMaxFrameDuration = frameDuration
+            }
             if camera.isFocusModeSupported(.continuousAutoFocus) {
                 camera.focusMode = .continuousAutoFocus
             }
