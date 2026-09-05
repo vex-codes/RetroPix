@@ -75,7 +75,6 @@ final class CameraViewModel {
     }
 
     var isFlashOn: Bool = false
-    var isFrontCamera: Bool = false
 
     var activePalette: Palette {
         guard !palettes.isEmpty else { return Palette.def }

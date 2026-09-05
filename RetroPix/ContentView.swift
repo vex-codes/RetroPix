@@ -66,7 +66,6 @@ struct ContentView: View {
                 PortraitDeck(
                     vm: vm,
                     cameraManager: cameraManager,
-                    renderer: renderer,
                     isCountingDown: countdownRemaining != nil,
                     rotation: rotation,
                     onShutter: handleShutterTap
@@ -150,13 +149,7 @@ struct ContentView: View {
     private func updateRendererConfig() {
         let (w, h) = vm.outputSize
         let crop = vm.activeRatio.cropUV
-        renderer?.updateConfig(
-            width: w,
-            height: h,
-            cropUV: crop,
-            orientation: 1,
-            isFrontCamera: vm.isFrontCamera
-        )
+        renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
     }
@@ -302,7 +295,6 @@ private struct TopOSDBar: View {
 private struct PortraitDeck: View {
     var vm: CameraViewModel
     var cameraManager: CameraManager
-    var renderer: MetalRenderer?
     let isCountingDown: Bool
     let rotation: Double
     let onShutter: () -> Void
@@ -344,18 +336,21 @@ private struct PortraitDeck: View {
             }
             .frame(height: 44)
 
-            // Row 4: Flash (Left) | Shutter (Center) | Flip (Right)
-            HStack(spacing: 36) {
+            // Row 4: Flash (Left) | Shutter (Center)
+            HStack(spacing: 0) {
                 // Flash Toggle (Left)
                 FlashButton(
                     isFlashOn: vm.isFlashOn,
-                    isEnabled: !vm.isFrontCamera && cameraManager.hasTorch,
+                    isEnabled: cameraManager.hasTorch,
                     rotation: rotation
                 ) {
                     let state = cameraManager.toggleTorch()
                     vm.isFlashOn = state
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
+                .frame(width: 64, alignment: .center)
+
+                Spacer()
 
                 // Shutter Button (Center)
                 ZStack {
@@ -369,24 +364,13 @@ private struct PortraitDeck: View {
                     }
                 }
 
-                // Flip Camera (Right)
-                FlipCameraButton(rotation: rotation) {
-                    cameraManager.flipCamera { isFront in
-                        vm.isFrontCamera = isFront
-                        if isFront {
-                            vm.isFlashOn = false
-                        }
-                        renderer?.updateConfig(
-                            width: vm.outputSize.w,
-                            height: vm.outputSize.h,
-                            cropUV: vm.activeRatio.cropUV,
-                            orientation: 1,
-                            isFrontCamera: isFront
-                        )
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    }
-                }
+                Spacer()
+
+                // Balanced spacer
+                Color.clear
+                    .frame(width: 64, height: 44)
             }
+            .padding(.horizontal, 36)
             .padding(.bottom, 24)
         }
         .background(RetroTheme.bg.opacity(0.95))

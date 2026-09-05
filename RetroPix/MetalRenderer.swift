@@ -14,7 +14,6 @@ private struct ShaderUniforms {
     var outputSize: SIMD2<UInt32>
     var ditherSpread: Float
     var paletteCount: UInt32
-    var isFrontCamera: UInt32
 }
 
 final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
@@ -36,7 +35,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private(set) var outputHeight: Int = 128
     private var cropUV: SIMD4<Float> = SIMD4<Float>(0.0, 40.0 / 720.0, 1.0, 680.0 / 720.0)
     private var orientation: UInt32 = 0
-    var isFrontCamera: Bool = false
 
     // MARK: — Palette
 
@@ -71,7 +69,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Configuration update
 
-    func updateConfig(width: Int, height: Int, cropUV: SIMD4<Float>, orientation: UInt32, isFrontCamera: Bool = false) {
+    func updateConfig(width: Int, height: Int, cropUV: SIMD4<Float>, orientation: UInt32) {
         if outputWidth != width || outputHeight != height {
             outputWidth = width
             outputHeight = height
@@ -80,7 +78,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         }
         self.cropUV = cropUV
         self.orientation = orientation
-        self.isFrontCamera = isFrontCamera
     }
 
     // MARK: — Pipeline setup
@@ -166,8 +163,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                 cropUV: cropUV,
                 outputSize: SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight)),
                 ditherSpread: ditherSpread,
-                paletteCount: paletteCount,
-                isFrontCamera: isFrontCamera ? 1 : 0
+                paletteCount: paletteCount
             )
             enc.setBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 1)
 

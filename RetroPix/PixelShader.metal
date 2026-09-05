@@ -30,7 +30,6 @@ struct KernelUniforms {
     uint2  outputSize;
     float  ditherSpread;
     uint   paletteCount;
-    uint   isFrontCamera;
 };
 
 kernel void pixelKernel(
@@ -46,17 +45,9 @@ kernel void pixelKernel(
     float nx = (float(gid.x) + 0.5) / float(uniforms.outputSize.x);
     float ny = (float(gid.y) + 0.5) / float(uniforms.outputSize.y);
 
-    // Portrait UV mapping
-    float u, v;
-    if (uniforms.isFrontCamera == 1u) {
-        // Front camera: inverted vertical axis for upright sensor, mirrored horizontal for selfie view
-        u = uniforms.cropUV.z - ny * (uniforms.cropUV.z - uniforms.cropUV.x);
-        v = uniforms.cropUV.y + nx * (uniforms.cropUV.w - uniforms.cropUV.y);
-    } else {
-        // Back camera: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
-        u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
-        v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
-    }
+    // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
+    float u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
+    float v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
 
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float3 color = cameraTexture.sample(s, float2(u, v)).rgb;

@@ -88,9 +88,25 @@ enum CaptureService {
         if angle != 0 {
             ctx.translateBy(x: CGFloat(targetW) / 2.0, y: CGFloat(targetH) / 2.0)
             ctx.rotate(by: angle)
-            let innerW = frameBorderEnabled ? photoRect.width : CGFloat(drawW)
-            let innerH = frameBorderEnabled ? photoRect.height : CGFloat(drawH)
-            ctx.draw(cgSource, in: CGRect(x: -innerW / 2.0, y: -innerH / 2.0, width: innerW, height: innerH))
+
+            let isQuarterTurn = (orientation == .landscapeLeft || orientation == .landscapeRight)
+            let drawWidth: CGFloat
+            let drawHeight: CGFloat
+
+            if frameBorderEnabled {
+                drawWidth  = isQuarterTurn ? photoRect.height : photoRect.width
+                drawHeight = isQuarterTurn ? photoRect.width : photoRect.height
+            } else {
+                drawWidth  = CGFloat(drawW)
+                drawHeight = CGFloat(drawH)
+            }
+
+            ctx.draw(cgSource, in: CGRect(
+                x: -drawWidth / 2.0,
+                y: -drawHeight / 2.0,
+                width: drawWidth,
+                height: drawHeight
+            ))
         } else {
             ctx.draw(cgSource, in: photoRect)
         }
