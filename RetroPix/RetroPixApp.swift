@@ -1,9 +1,5 @@
-//
-//  RetroPixApp.swift
-//  RetroPix
-//
-//  Created by Vedansh Kumar on 9/4/26.
-//
+// RetroPixApp.swift
+// RetroPix
 
 import SwiftUI
 
