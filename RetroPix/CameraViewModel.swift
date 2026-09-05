@@ -4,6 +4,22 @@
 
 import SwiftUI
 
+enum DateStampMode: String, CaseIterable, Identifiable, Codable {
+    case off = "OFF"
+    case orange = "ORANGE"
+    case green = "GREEN"
+
+    var id: String { rawValue }
+
+    var displayLabel: String {
+        switch self {
+        case .off: return "OFF"
+        case .orange: return "ORANGE ('98)"
+        case .green: return "GREEN ('98)"
+        }
+    }
+}
+
 @Observable
 final class CameraViewModel {
     var activePaletteIndex: Int = 0
@@ -33,6 +49,33 @@ final class CameraViewModel {
             UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode")
         }
     }
+
+    var dateStampMode: DateStampMode = {
+        if let saved = UserDefaults.standard.string(forKey: "dateStampMode"),
+           let mode = DateStampMode(rawValue: saved) {
+            return mode
+        }
+        return .orange
+    }() {
+        didSet {
+            UserDefaults.standard.set(dateStampMode.rawValue, forKey: "dateStampMode")
+        }
+    }
+
+    var frameBorderEnabled: Bool = UserDefaults.standard.object(forKey: "frameBorderEnabled") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(frameBorderEnabled, forKey: "frameBorderEnabled")
+        }
+    }
+
+    var timerDuration: Int = UserDefaults.standard.object(forKey: "timerDuration") as? Int ?? 0 {
+        didSet {
+            UserDefaults.standard.set(timerDuration, forKey: "timerDuration")
+        }
+    }
+
+    var isFlashOn: Bool = false
+    var isFrontCamera: Bool = false
 
     var activePalette: Palette {
         guard !palettes.isEmpty else { return Palette.def }
@@ -149,6 +192,27 @@ final class CameraViewModel {
         let steps: [Float] = [0, 0.5, 0.75, 1.0]
         let nearestIdx = steps.indices.min(by: { abs(steps[$0] - ditherIntensity) < abs(steps[$1] - ditherIntensity) }) ?? 2
         ditherIntensity = steps[(nearestIdx + 1) % steps.count]
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Cycles self-timer between OFF (0s) → 3s → 10s.
+    func cycleTimer() {
+        switch timerDuration {
+        case 0:  timerDuration = 3
+        case 3:  timerDuration = 10
+        default: timerDuration = 0
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Cycles date stamp between OFF → ORANGE → GREEN.
+    func cycleDateStamp() {
+        let all = DateStampMode.allCases
+        if let idx = all.firstIndex(of: dateStampMode) {
+            dateStampMode = all[(idx + 1) % all.count]
+        } else {
+            dateStampMode = .off
+        }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

@@ -53,7 +53,99 @@ struct CameraSettingsView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 6)
 
-                        Divider().background(RetroTheme.border).padding(.vertical, 16)
+                        Divider().background(RetroTheme.border).padding(.vertical, 14)
+
+                        // ── Photo Effects & Timer ─────────────────────────────
+                        SectionHeader(title: "PHOTO EFFECTS & TIMER", sub: "90s quartz date stamp, frame borders, and self-timer")
+
+                        // Date/Time Stamp mode picker
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("90S DATE/TIME STAMP")
+                                .font(RetroTheme.mono(10))
+                                .foregroundStyle(RetroTheme.dimText)
+
+                            HStack(spacing: 8) {
+                                ForEach(DateStampMode.allCases) { mode in
+                                    Button {
+                                        vm.dateStampMode = mode
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    } label: {
+                                        Text(mode.displayLabel)
+                                            .font(RetroTheme.mono(10))
+                                            .foregroundStyle(vm.dateStampMode == mode ? RetroTheme.bg : (mode == .orange ? RetroTheme.amber : (mode == .green ? RetroTheme.green : RetroTheme.dimText)))
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(vm.dateStampMode == mode ? (mode == .orange ? RetroTheme.amber : (mode == .green ? RetroTheme.green : RetroTheme.dimText)) : Color.clear)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .stroke(mode == .orange ? RetroTheme.amber.opacity(0.6) : (mode == .green ? RetroTheme.green.opacity(0.6) : RetroTheme.border), lineWidth: 1)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+
+                        // Frame Borders Toggle
+                        Toggle(isOn: Binding(
+                            get: { vm.frameBorderEnabled },
+                            set: {
+                                vm.frameBorderEnabled = $0
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("FRAME BORDERS")
+                                    .font(RetroTheme.mono(11))
+                                    .foregroundStyle(vm.frameBorderEnabled ? RetroTheme.green : RetroTheme.text)
+                                Text("Vintage photo paper margin & corner ticks")
+                                    .font(RetroTheme.mono(8, weight: .regular))
+                                    .foregroundStyle(RetroTheme.dimText)
+                            }
+                        }
+                        .tint(RetroTheme.green)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+
+                        // Self-Timer Selector
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("SELF-TIMER")
+                                .font(RetroTheme.mono(10))
+                                .foregroundStyle(RetroTheme.dimText)
+
+                            HStack(spacing: 8) {
+                                ForEach([0, 3, 10], id: \.self) { sec in
+                                    Button {
+                                        vm.timerDuration = sec
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    } label: {
+                                        Text(sec == 0 ? "OFF" : "\(sec) SEC")
+                                            .font(RetroTheme.mono(10))
+                                            .foregroundStyle(vm.timerDuration == sec ? RetroTheme.bg : RetroTheme.amber)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(vm.timerDuration == sec ? RetroTheme.amber : Color.clear)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .stroke(RetroTheme.amber.opacity(0.5), lineWidth: 1)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+
+                        Divider().background(RetroTheme.border).padding(.vertical, 14)
 
                         // ── Palette Creation & Generation ─────────────────────
                         SectionHeader(title: "PALETTE CREATOR & GENERATOR", sub: "Synthesize harmonic or custom palettes")

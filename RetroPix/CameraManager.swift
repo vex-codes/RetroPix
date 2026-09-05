@@ -16,6 +16,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private var textureCache: CVMetalTextureCache?
     private var currentCamera: AVCaptureDevice?   // retained for EV bias updates
 
+    private(set) var cameraPosition: AVCaptureDevice.Position = .back
+    private(set) var isTorchOn: Bool = false
+
+    var isFrontFacing: Bool { cameraPosition == .front }
+    var hasTorch: Bool { currentCamera?.hasTorch ?? false }
+
     private let textureLock = NSLock()
     private var _cameraTexture: MTLTexture?
 
@@ -56,7 +62,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
             // --- Input ---
             guard
-                let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: self.cameraPosition),
                 let input = try? AVCaptureDeviceInput(device: camera),
                 session.canAddInput(input)
             else {
@@ -150,6 +156,119 @@ final class CameraManager: NSObject, @unchecked Sendable {
             camera.videoZoomFactor = clamped
             camera.unlockForConfiguration()
         }
+    }
+
+    // MARK: — Camera Flip & Torch
+
+    /// Flips between back and front cameras asynchronously.
+    func flipCamera(completion: ((Bool) -> Void)? = nil) {
+        sessionQueue.async { [weak self] in
+            guard let self, let session = self.captureSession else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
+
+            let newPosition: AVCaptureDevice.Position = (self.cameraPosition == .back) ? .front : .back
+            guard
+                let newCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition),
+                let newInput = try? AVCaptureDeviceInput(device: newCamera)
+            else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
+
+            // Turn off torch if active
+            if self.isTorchOn {
+                self.setTorch(false)
+            }
+
+            session.beginConfiguration()
+
+            // Remove existing inputs
+            for input in session.inputs {
+                session.removeInput(input)
+            }
+
+            if session.canAddInput(newInput) {
+                session.addInput(newInput)
+                self.cameraPosition = newPosition
+                self.currentCamera = newCamera
+
+                // Minimal processing — continuous AF/AE, 30 FPS cap
+                try? newCamera.lockForConfiguration()
+                let frameDuration = CMTime(value: 1, timescale: 30)
+                if newCamera.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+                    $0.minFrameDuration <= frameDuration && frameDuration <= $0.maxFrameDuration
+                }) {
+                    newCamera.activeVideoMinFrameDuration = frameDuration
+                    newCamera.activeVideoMaxFrameDuration = frameDuration
+                }
+                if newCamera.isFocusModeSupported(.continuousAutoFocus) {
+                    newCamera.focusMode = .continuousAutoFocus
+                }
+                if newCamera.isExposureModeSupported(.continuousAutoExposure) {
+                    newCamera.exposureMode = .continuousAutoExposure
+                }
+                if newCamera.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                    newCamera.whiteBalanceMode = .continuousAutoWhiteBalance
+                }
+                newCamera.unlockForConfiguration()
+            }
+
+            // Sensor native 0°
+            if let output = session.outputs.first(where: { $0 is AVCaptureVideoDataOutput }) as? AVCaptureVideoDataOutput,
+               let connection = output.connection(with: .video) {
+                if connection.isVideoRotationAngleSupported(0) {
+                    connection.videoRotationAngle = 0
+                }
+            }
+
+            session.commitConfiguration()
+            let isFront = (self.cameraPosition == .front)
+            DispatchQueue.main.async { completion?(isFront) }
+        }
+    }
+
+    /// Toggles hardware torch on back camera. Returns new torch state.
+    @discardableResult
+    func toggleTorch() -> Bool {
+        guard cameraPosition == .back, let camera = currentCamera, camera.hasTorch else {
+            isTorchOn = false
+            return false
+        }
+
+        do {
+            try camera.lockForConfiguration()
+            if isTorchOn {
+                camera.torchMode = .off
+                isTorchOn = false
+            } else {
+                if camera.isTorchModeSupported(.on) {
+                    try camera.setTorchModeOn(level: 1.0)
+                    isTorchOn = true
+                }
+            }
+            camera.unlockForConfiguration()
+            return isTorchOn
+        } catch {
+            return false
+        }
+    }
+
+    func setTorch(_ on: Bool) {
+        guard cameraPosition == .back, let camera = currentCamera, camera.hasTorch else {
+            isTorchOn = false
+            return
+        }
+        try? camera.lockForConfiguration()
+        if on && camera.isTorchModeSupported(.on) {
+            try? camera.setTorchModeOn(level: 1.0)
+            isTorchOn = true
+        } else {
+            camera.torchMode = .off
+            isTorchOn = false
+        }
+        camera.unlockForConfiguration()
     }
 
 }

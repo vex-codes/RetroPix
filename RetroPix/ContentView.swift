@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var showSettings        = false
     @State private var shutterFlash        = 0.0
     @State private var orientationObserver = DeviceOrientationObserver()
+    @State private var countdownRemaining: Int? = nil
+    @State private var countdownTask: Task<Void, Never>? = nil
 
     var body: some View {
         let rotation = orientationObserver.uiRotationAngle
@@ -39,6 +41,10 @@ struct ContentView: View {
                         ZStack {
                             MetalView(renderer: renderer, isPaused: showSettings)
                             CrosshairOverlay()
+
+                            if let count = countdownRemaining {
+                                CountdownOSDOverlay(remaining: count, rotation: rotation)
+                            }
                         }
                         .aspectRatio(aspect, contentMode: .fit)
                         .clipped()
@@ -57,7 +63,14 @@ struct ContentView: View {
                 )
 
                 // Bottom control deck
-                PortraitDeck(vm: vm, rotation: rotation, onShutter: triggerCapture)
+                PortraitDeck(
+                    vm: vm,
+                    cameraManager: cameraManager,
+                    renderer: renderer,
+                    isCountingDown: countdownRemaining != nil,
+                    rotation: rotation,
+                    onShutter: handleShutterTap
+                )
             }
             .ignoresSafeArea(edges: .bottom)
 
@@ -137,9 +150,63 @@ struct ContentView: View {
     private func updateRendererConfig() {
         let (w, h) = vm.outputSize
         let crop = vm.activeRatio.cropUV
-        renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
+        renderer?.updateConfig(
+            width: w,
+            height: h,
+            cropUV: crop,
+            orientation: 1,
+            isFrontCamera: vm.isFrontCamera
+        )
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
+    }
+
+    // MARK: — Shutter & Timer Handling
+
+    private func handleShutterTap() {
+        if countdownRemaining != nil {
+            cancelCountdown()
+            return
+        }
+
+        if vm.timerDuration > 0 {
+            startCountdown(seconds: vm.timerDuration)
+        } else {
+            triggerCapture()
+        }
+    }
+
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdownRemaining = nil
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func startCountdown(seconds: Int) {
+        countdownRemaining = seconds
+        countdownTask = Task { @MainActor in
+            var remaining = seconds
+            while remaining > 0 {
+                let isUrgent = remaining <= 3
+                ShutterAudioService.shared.playBeep(urgent: isUrgent)
+                countdownRemaining = remaining
+
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    return
+                }
+
+                if Task.isCancelled { return }
+                remaining -= 1
+            }
+
+            countdownRemaining = nil
+            ShutterAudioService.shared.playBeep(urgent: true)
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            triggerCapture()
+        }
     }
 
     // MARK: — Capture
@@ -163,7 +230,9 @@ struct ContentView: View {
             defer { isCapturing = false }
             try? await CaptureService.capture(
                 from: renderer,
-                orientation: orientationObserver.orientation
+                orientation: orientationObserver.orientation,
+                dateStampMode: vm.dateStampMode,
+                frameBorderEnabled: vm.frameBorderEnabled
             )
         }
     }
@@ -178,7 +247,7 @@ private struct TopOSDBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Aspect ratio quick switchers
+            // Aspect ratio quick switchers + self-timer
             HStack(spacing: 6) {
                 ForEach(AspectRatio.allCases) { ratio in
                     RatioButton(
@@ -189,6 +258,11 @@ private struct TopOSDBar: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                     .rotationEffect(.degrees(rotation))
+                }
+
+                // Self-Timer Quick Button
+                TimerButton(duration: vm.timerDuration, rotation: rotation) {
+                    vm.cycleTimer()
                 }
             }
 
@@ -227,6 +301,9 @@ private struct TopOSDBar: View {
 
 private struct PortraitDeck: View {
     var vm: CameraViewModel
+    var cameraManager: CameraManager
+    var renderer: MetalRenderer?
+    let isCountingDown: Bool
     let rotation: Double
     let onShutter: () -> Void
 
@@ -267,9 +344,50 @@ private struct PortraitDeck: View {
             }
             .frame(height: 44)
 
-            // Row 4: Shutter (text removed)
-            ShutterButton(action: onShutter)
-                .padding(.bottom, 24)
+            // Row 4: Flash (Left) | Shutter (Center) | Flip (Right)
+            HStack(spacing: 36) {
+                // Flash Toggle (Left)
+                FlashButton(
+                    isFlashOn: vm.isFlashOn,
+                    isEnabled: !vm.isFrontCamera && cameraManager.hasTorch,
+                    rotation: rotation
+                ) {
+                    let state = cameraManager.toggleTorch()
+                    vm.isFlashOn = state
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+
+                // Shutter Button (Center)
+                ZStack {
+                    ShutterButton(action: onShutter)
+
+                    if isCountingDown {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(RetroTheme.red)
+                            .frame(width: 14, height: 14)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                // Flip Camera (Right)
+                FlipCameraButton(rotation: rotation) {
+                    cameraManager.flipCamera { isFront in
+                        vm.isFrontCamera = isFront
+                        if isFront {
+                            vm.isFlashOn = false
+                        }
+                        renderer?.updateConfig(
+                            width: vm.outputSize.w,
+                            height: vm.outputSize.h,
+                            cropUV: vm.activeRatio.cropUV,
+                            orientation: 1,
+                            isFrontCamera: isFront
+                        )
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
+                }
+            }
+            .padding(.bottom, 24)
         }
         .background(RetroTheme.bg.opacity(0.95))
     }
@@ -376,26 +494,137 @@ private struct ArrowBtn: View {
     }
 }
 
-// MARK: — Shutter Audio Service (in-memory mechanical click)
+// MARK: — Blinking Countdown OSD Overlay
+
+private struct CountdownOSDOverlay: View {
+    let remaining: Int
+    let rotation: Double
+    @State private var isBlinking = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+
+            VStack(spacing: 8) {
+                // Status pill
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(RetroTheme.red)
+                        .frame(width: 8, height: 8)
+                        .opacity(isBlinking ? 0.2 : 1.0)
+
+                    Text("TIMER ACTIVE")
+                        .font(RetroTheme.mono(10))
+                        .foregroundStyle(RetroTheme.red)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(RetroTheme.panel.opacity(0.85))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(RetroTheme.red.opacity(0.5), lineWidth: 1)
+                        )
+                )
+
+                // Large blinking phosphor numeral
+                Text("\(remaining)")
+                    .font(RetroTheme.mono(88, weight: .heavy))
+                    .foregroundStyle(remaining <= 3 ? RetroTheme.amber : RetroTheme.green)
+                    .scaleEffect(isBlinking ? 1.08 : 0.95)
+                    .shadow(color: (remaining <= 3 ? RetroTheme.amber : RetroTheme.green).opacity(0.8), radius: 12)
+            }
+            .rotationEffect(.degrees(rotation))
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                isBlinking = true
+            }
+        }
+    }
+}
+
+// MARK: — Shutter Audio Service (in-memory mechanical click + retro timer beeps)
 
 final class ShutterAudioService: @unchecked Sendable {
     static let shared = ShutterAudioService()
-    private var player: AVAudioPlayer?
+    private var shutterPlayer: AVAudioPlayer?
+    private var normalBeepPlayer: AVAudioPlayer?
+    private var urgentBeepPlayer: AVAudioPlayer?
 
     private init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
+
         let wav = createShutterWav()
-        player = try? AVAudioPlayer(data: wav)
-        player?.prepareToPlay()
+        shutterPlayer = try? AVAudioPlayer(data: wav)
+        shutterPlayer?.prepareToPlay()
+
+        let normalWav = createToneWav(freq: 1200.0, duration: 0.05)
+        normalBeepPlayer = try? AVAudioPlayer(data: normalWav)
+        normalBeepPlayer?.prepareToPlay()
+
+        let urgentWav = createToneWav(freq: 2400.0, duration: 0.045)
+        urgentBeepPlayer = try? AVAudioPlayer(data: urgentWav)
+        urgentBeepPlayer?.prepareToPlay()
     }
 
     func play() {
-        if let player {
-            player.currentTime = 0
-            player.play()
+        if let shutterPlayer {
+            shutterPlayer.currentTime = 0
+            shutterPlayer.play()
         }
         AudioServicesPlaySystemSound(1108)
+    }
+
+    func playBeep(urgent: Bool = false) {
+        let p = urgent ? urgentBeepPlayer : normalBeepPlayer
+        if let p {
+            p.currentTime = 0
+            p.play()
+        }
+        UIImpactFeedbackGenerator(style: urgent ? .rigid : .light).impactOccurred()
+    }
+
+    private func createToneWav(freq: Double, duration: Double) -> Data {
+        let sampleRate: Int32 = 44100
+        let numSamples = Int(Double(sampleRate) * duration)
+        var samples = [Int16](repeating: 0, count: numSamples)
+
+        for i in 0..<numSamples {
+            let t = Double(i) / Double(sampleRate)
+            let attack = min(1.0, t / 0.005)
+            let decay = min(1.0, (duration - t) / 0.005)
+            let envelope = attack * decay
+            let s = sin(2.0 * .pi * freq * t) * envelope * 0.75
+            samples[i] = Int16(s * 32767.0)
+        }
+
+        var data = Data()
+        data.append(contentsOf: [UInt8]("RIFF".utf8))
+        let fileSize = Int32(36 + numSamples * 2)
+        withUnsafeBytes(of: fileSize.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("WAVEfmt ".utf8))
+        let subchunk1Size: Int32 = 16
+        withUnsafeBytes(of: subchunk1Size.littleEndian) { data.append(contentsOf: $0) }
+        let audioFormat: Int16 = 1
+        withUnsafeBytes(of: audioFormat.littleEndian) { data.append(contentsOf: $0) }
+        let numChannels: Int16 = 1
+        withUnsafeBytes(of: numChannels.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: sampleRate.littleEndian) { data.append(contentsOf: $0) }
+        let byteRate = sampleRate * 2
+        withUnsafeBytes(of: byteRate.littleEndian) { data.append(contentsOf: $0) }
+        let blockAlign: Int16 = 2
+        withUnsafeBytes(of: blockAlign.littleEndian) { data.append(contentsOf: $0) }
+        let bitsPerSample: Int16 = 16
+        withUnsafeBytes(of: bitsPerSample.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("data".utf8))
+        let dataSize = Int32(numSamples * 2)
+        withUnsafeBytes(of: dataSize.littleEndian) { data.append(contentsOf: $0) }
+        samples.withUnsafeBytes { data.append(contentsOf: $0) }
+        return data
     }
 
     private func createShutterWav() -> Data {
