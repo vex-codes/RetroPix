@@ -27,6 +27,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private var paletteBuffer: MTLBuffer?
     private var paletteCount: UInt32 = 0
 
+    // MARK: — Dither spread (ViewModel-controlled, default 0.75)
+
+    /// Set from CameraViewModel via .onChange — safe to write from MainActor,
+    /// read happens on the render loop (MTKView callback) which is also main-thread.
+    var ditherSpread: Float = 0.75
+
     // MARK: — Viewport scale (letterbox)
 
     /// Applied in the vertex shader to maintain the 2:1 aspect inside the drawable.
@@ -124,6 +130,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             enc.setTexture(pixelTexture,  index: 1)
             enc.setBuffer(paletteBuffer, offset: 0, index: 0)
             enc.setBytes(&paletteCount, length: MemoryLayout<UInt32>.size, index: 1)
+            var spread = ditherSpread
+            enc.setBytes(&spread, length: MemoryLayout<Float>.size, index: 2)
 
             // 8×8 threadgroup, ceil-divide 256×128
             let tg    = MTLSize(width: 8, height: 8, depth: 1)

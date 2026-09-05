@@ -27,9 +27,7 @@ constant int bayer8[64] = {
 constant float CROP_V0 = 40.0 / 720.0;
 constant float CROP_V1 = 680.0 / 720.0;
 
-// Dither spread: how strongly the threshold perturbs each channel.
-// 0 = no dither (flat quantize), 1 = full range dither.
-constant float DITHER_SPREAD = 0.75;
+// Dither spread is now a per-frame uniform — see MetalRenderer.ditherSpread.
 
 // ---------------------------------------------------------------------------
 // MARK: — Compute kernel: camera → 256×128 dithered pixel art
@@ -39,6 +37,7 @@ kernel void pixelKernel(
     texture2d<float, access::write>   outputTexture  [[texture(1)]],
     constant float4                  *palette        [[buffer(0)]],   // up to 8 × float4(r,g,b,0)
     constant uint                    &paletteCount   [[buffer(1)]],
+    constant float                   &ditherSpread   [[buffer(2)]],   // 0.0–1.0 from CameraViewModel
     uint2                             gid            [[thread_position_in_grid]])
 {
     if (gid.x >= 256u || gid.y >= 128u) return;
@@ -55,7 +54,7 @@ kernel void pixelKernel(
     float threshold = (float(bayer8[by * 8 + bx]) / 63.0) - 0.5;
 
     // --- 3. Apply dither offset to each RGB channel ---
-    float3 dithered = clamp(color + threshold * DITHER_SPREAD, 0.0, 1.0);
+    float3 dithered = clamp(color + threshold * ditherSpread, 0.0, 1.0);
 
     // --- 4. Palette quantize — nearest color in Euclidean RGB space ---
     float  minDist = 1e9;

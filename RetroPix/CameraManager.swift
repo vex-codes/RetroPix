@@ -14,6 +14,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     private var captureSession: AVCaptureSession?
     private var textureCache: CVMetalTextureCache?
+    private var currentCamera: AVCaptureDevice?   // retained for EV bias updates
 
     private let textureLock = NSLock()
     private var _cameraTexture: MTLTexture?
@@ -76,6 +77,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
                 camera.whiteBalanceMode = .continuousAutoWhiteBalance
             }
             camera.unlockForConfiguration()
+            self.currentCamera = camera
 
             // --- Output ---
             let output = AVCaptureVideoDataOutput()
@@ -120,6 +122,17 @@ final class CameraManager: NSObject, @unchecked Sendable {
             self?.captureSession?.stopRunning()
         }
     }
+
+    /// Adjusts the exposure target bias (-2.0 … +2.0 EV). No-op if device unavailable.
+    func setExposureBias(_ bias: Float) {
+        sessionQueue.async { [weak self] in
+            guard let camera = self?.currentCamera else { return }
+            try? camera.lockForConfiguration()
+            camera.setExposureTargetBias(bias, completionHandler: nil)
+            camera.unlockForConfiguration()
+        }
+    }
+
 }
 
 // MARK: — AVCaptureVideoDataOutputSampleBufferDelegate

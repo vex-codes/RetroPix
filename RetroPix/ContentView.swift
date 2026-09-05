@@ -1,79 +1,52 @@
 // ContentView.swift
-// RetroPix — Minimal SwiftUI shell over the Metal viewfinder.
+// RetroPix — Primary layout: Metal feed behind a retro OSD + control deck.
 //
-// Gestures:
-//   • Double-tap          → shutter
-//   • Volume Up/Down      → shutter (via AVAudioSession KVO)
-//   • Long-press (0.5 s)  → reveal palette menu
-//     Palette menu: Tap   → cycle selection  |  Long-press (1 s) → confirm + dismiss
-//     Tap outside menu    → dismiss without change
-//
-// No UI chrome is shown during normal use — just the live pixel feed.
+// Structure (landscape):
+//   TopOSDBar  (40pt) — status pill, telemetry, menu button
+//   ZStack     (flex) — MetalView fullscreen + crosshair overlay
+//   BottomDeck (72pt) — palette cycler | EV stepper | dither toggle | shutter
 
 import AVFoundation
-import MediaPlayer
 import Photos
 import SwiftUI
 
-// MARK: — Root view
+// MARK: — Root
 
 struct ContentView: View {
-    // Created once; CameraManager holds the capture session.
+    @State private var vm            = CameraViewModel()
     @State private var cameraManager = CameraManager()
     @State private var renderer: MetalRenderer?
-
-    @State private var palette: Palette = Palette.all[0]
-    @State private var showMenu = false
-    @State private var isCapturing = false
+    @State private var isCapturing   = false
+    @State private var showSettings  = false
 
     var body: some View {
-        ZStack {
-            // ── Pixel viewfinder ──────────────────────────────────────────────
+        ZStack(alignment: .top) {
+            // ── 1. Black base (visible while camera initialises) ──────────────
+            Color.black.ignoresSafeArea()
+
+            // ── 2. Metal viewfinder ───────────────────────────────────────────
             if let renderer {
                 MetalView(renderer: renderer)
                     .ignoresSafeArea()
-            } else {
-                Color.black.ignoresSafeArea()
-            }
-
-            // ── Volume button shutter (off-screen MPVolumeView) ───────────────
-            if renderer != nil {
-                VolumeMonitor { triggerCapture() }
-                    .frame(width: 1, height: 1)
-                    .opacity(0)
                     .allowsHitTesting(false)
             }
 
-            // ── Gesture layer (double-tap + long-press) ───────────────────────
-            Color.clear
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { triggerCapture() }
-                .onLongPressGesture(minimumDuration: 0.5) {
-                    withAnimation(.easeInOut(duration: 0.12)) { showMenu = true }
-                }
+            // ── 3. OSD rails ─────────────────────────────────────────────────
+            VStack(spacing: 0) {
+                TopOSDBar(vm: vm, onMenu: { showSettings = true })
 
-            // ── Palette overlay ───────────────────────────────────────────────
-            if showMenu, let renderer {
-                // Dim background closes menu on outside tap
-                Color.black.opacity(0.3)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.12)) { showMenu = false }
-                    }
+                // Crosshair corners sit over the middle of the screen
+                CrosshairOverlay()
 
-                PaletteMenuView(current: palette) { selected in
-                    palette = selected
-                    renderer.updatePalette(selected)
-                    withAnimation(.easeInOut(duration: 0.12)) { showMenu = false }
-                } onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.12)) { showMenu = false }
-                }
+                Spacer()
+
+                BottomDeck(vm: vm, onShutter: triggerCapture)
             }
+            .ignoresSafeArea(edges: .bottom)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onAppear { setupRenderer() }
+        .onAppear(perform: setupRenderer)
         .onDisappear { cameraManager.stopSession() }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
@@ -81,6 +54,19 @@ struct ContentView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
         ) { _ in cameraManager.startSession() }
+        // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
+        .onChange(of: vm.activePaletteIndex) { _, _ in
+            renderer?.updatePalette(vm.activePalette)
+        }
+        .onChange(of: vm.ditherIntensity) { _, new in
+            renderer?.ditherSpread = new
+        }
+        .onChange(of: vm.evBias) { _, new in
+            cameraManager.setExposureBias(new)
+        }
+        .sheet(isPresented: $showSettings) {
+            CameraSettingsView(vm: vm)
+        }
         .task { await CaptureService.requestPhotoPermissionIfNeeded() }
     }
 
@@ -93,7 +79,7 @@ struct ContentView: View {
         renderer = MetalRenderer(device: device, cameraManager: cameraManager)
     }
 
-    // MARK: — Shutter
+    // MARK: — Capture
 
     func triggerCapture() {
         guard !isCapturing, let renderer else { return }
@@ -105,121 +91,177 @@ struct ContentView: View {
     }
 }
 
-// MARK: — Palette overlay menu
+// MARK: — Top OSD bar
 
-private struct PaletteMenuView: View {
-    let current: Palette
-    let onConfirm: (Palette) -> Void
-    let onDismiss: () -> Void
-
-    @State private var highlightedIndex: Int
-    @State private var isConfirmHolding = false
-
-    init(current: Palette, onConfirm: @escaping (Palette) -> Void, onDismiss: @escaping () -> Void) {
-        self.current   = current
-        self.onConfirm = onConfirm
-        self.onDismiss = onDismiss
-        let idx = Palette.all.firstIndex(where: { $0.id == current.id }) ?? 0
-        self._highlightedIndex = State(initialValue: idx)
-    }
+private struct TopOSDBar: View {
+    var vm: CameraViewModel
+    let onMenu: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            Text("// PALETTE //")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color(white: 0.45))
-                .padding(.bottom, 10)
+        HStack(spacing: 14) {
+            OSDPill()
 
-            // Palette rows
-            ForEach(Array(Palette.all.enumerated()), id: \.offset) { idx, pal in
-                HStack(spacing: 8) {
-                    // Color swatches (first 4 colors)
-                    HStack(spacing: 3) {
-                        ForEach(Array(pal.colors.prefix(4).enumerated()), id: \.offset) { _, c in
-                            Rectangle()
-                                .fill(Color(red: Double(c.r), green: Double(c.g), blue: Double(c.b)))
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                    Text((highlightedIndex == idx ? "▶ " : "  ") + pal.name)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(highlightedIndex == idx ? Color.white : Color(white: 0.4))
-                }
-                .padding(.vertical, 5)
-                .contentShape(Rectangle())
-                .onTapGesture { highlightedIndex = idx }
+            Spacer()
+
+            // Centre telemetry
+            VStack(spacing: 1) {
+                Text("256×128  2:1  60FPS")
+                    .font(RetroTheme.mono(9))
+                    .foregroundStyle(RetroTheme.amber)
+                Text(String(format: "EV %+.1f  DITHER \(vm.ditherLabel)", vm.evBias))
+                    .font(RetroTheme.mono(8, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
             }
 
-            Rectangle()
-                .fill(Color(white: 0.25))
-                .frame(height: 1)
-                .padding(.vertical, 10)
+            Spacer()
 
-            // Hint bar
-            HStack {
-                Text("TAP=SELECT")
-                Spacer()
-                Text(isConfirmHolding ? "CONFIRMING..." : "HOLD=CONFIRM")
+            // Menu button
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onMenu()
+            } label: {
+                Text("≡  MENU")
+                    .font(RetroTheme.mono(10))
+                    .foregroundStyle(RetroTheme.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(RetroTheme.green.opacity(0.07))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(RetroTheme.green.opacity(0.45), lineWidth: 1)
+                            )
+                    )
             }
-            .font(.system(size: 9, weight: .regular, design: .monospaced))
-            .foregroundStyle(Color(white: 0.35))
         }
-        .padding(18)
-        .background(
-            ZStack {
-                Rectangle().fill(Color.black.opacity(0.92))
-                Rectangle().stroke(Color(white: 0.28), lineWidth: 1)
-            }
-        )
-        .frame(minWidth: 220)
-        // Long-press confirms; quick gesture on the menu itself cycles (separately handled above per row)
-        .onLongPressGesture(minimumDuration: 1.0,
-            pressing: { pressing in isConfirmHolding = pressing },
-            perform: {
-                isConfirmHolding = false
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                onConfirm(Palette.all[highlightedIndex])
-            })
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(24)
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+        .background(RetroTheme.bg.opacity(0.92))
     }
 }
 
-// MARK: — Volume button monitor
+// MARK: — Bottom control deck
 
-/// Adds an off-screen MPVolumeView to suppress the system volume HUD,
-/// then KVO-observes AVAudioSession.outputVolume for any change (up or down).
-private struct VolumeMonitor: UIViewRepresentable {
-    let onPress: () -> Void
+private struct BottomDeck: View {
+    var vm: CameraViewModel
+    let onShutter: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPress: onPress) }
+    var body: some View {
+        HStack(spacing: 0) {
+            PaletteCycler(vm: vm)
+                .frame(maxWidth: .infinity)
 
-    func makeUIView(context: Context) -> MPVolumeView {
-        context.coordinator.start()
-        return MPVolumeView(frame: CGRect(x: -500, y: -500, width: 0, height: 0))
+            DeckDivider()
+
+            EVStepper(vm: vm)
+                .frame(maxWidth: .infinity)
+
+            DeckDivider()
+
+            DiamondToggle(vm: vm)
+                .frame(maxWidth: .infinity)
+
+            DeckDivider()
+
+            // Shutter — rightmost for right-thumb grip
+            VStack(spacing: 4) {
+                ShutterButton(action: onShutter)
+                Text("SHUTTER")
+                    .font(RetroTheme.mono(7))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(height: 72)
+        .background(RetroTheme.bg.opacity(0.92))
     }
+}
 
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+// MARK: — Palette cycler  [<] NAME [>]
 
-    final class Coordinator: NSObject, @unchecked Sendable {
-        private let onPress: () -> Void
-        private var obs: NSKeyValueObservation?
-        private var skipInitial = true
+private struct PaletteCycler: View {
+    var vm: CameraViewModel
 
-        init(onPress: @escaping () -> Void) { self.onPress = onPress }
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 10) {
+                ArrowBtn(symbol: "<") { vm.cyclePalette(forward: false) }
 
-        func start() {
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.ambient, options: .mixWithOthers)
-            try? session.setActive(true)
-            obs = session.observe(\.outputVolume, options: [.new]) { [weak self] _, _ in
-                guard let self else { return }
-                if self.skipInitial { self.skipInitial = false; return }
-                DispatchQueue.main.async { self.onPress() }
+                Text(vm.activePalette.name)
+                    .font(RetroTheme.mono(10))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 72, alignment: .center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                ArrowBtn(symbol: ">") { vm.cyclePalette(forward: true) }
+            }
+            ColorSwatchBar(palette: vm.activePalette, height: 6)
+                .padding(.horizontal, 14)
+        }
+        .padding(.horizontal, 8)
+    }
+}
+
+// MARK: — EV stepper  [-] EV: 0.0 [+]
+
+private struct EVStepper: View {
+    var vm: CameraViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ArrowBtn(symbol: "−") { vm.stepEV(up: false) }
+
+            VStack(spacing: 1) {
+                Text(String(format: "%+.1f", vm.evBias))
+                    .font(RetroTheme.mono(13))
+                    .foregroundStyle(RetroTheme.amber)
+                    .frame(minWidth: 38, alignment: .center)
+                Text("EV")
+                    .font(RetroTheme.mono(7, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+
+            ArrowBtn(symbol: "+") { vm.stepEV(up: true) }
+        }
+    }
+}
+
+// MARK: — Dither intensity toggle (tap to cycle)
+
+private struct DiamondToggle: View {
+    var vm: CameraViewModel
+
+    var body: some View {
+        Button(action: vm.cycleDither) {
+            VStack(spacing: 3) {
+                Text(vm.ditherLabel)
+                    .font(RetroTheme.mono(14))
+                    .foregroundStyle(vm.ditherIntensity == 0 ? RetroTheme.dimText : RetroTheme.green)
+                Text("DITHER")
+                    .font(RetroTheme.mono(7, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
             }
         }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+    }
+}
 
-        deinit { obs?.invalidate() }
+// MARK: — Small left/right arrow button
+
+private struct ArrowBtn: View {
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(symbol)
+                .font(RetroTheme.mono(14))
+                .foregroundStyle(RetroTheme.green)
+                .frame(width: 30, height: 44)  // 44pt touch target
+        }
+        .buttonStyle(.plain)
     }
 }
