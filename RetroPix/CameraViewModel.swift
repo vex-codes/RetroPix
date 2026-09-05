@@ -9,7 +9,17 @@ final class CameraViewModel {
     var activePaletteIndex: Int = 0
     var evBias: Float = 0.0          // clamped -2.0 … +2.0 in 0.5 steps
     var ditherIntensity: Float = 0.75 // 0 … 1.0; settable from deck toggle or settings slider
-    var activeRatio: AspectRatio = .ratio2_1
+    var activeRatio: AspectRatio = {
+        if let saved = UserDefaults.standard.string(forKey: "activeRatio"),
+           let ratio = AspectRatio(rawValue: saved) {
+            return ratio
+        }
+        return .ratio4_3
+    }() {
+        didSet {
+            UserDefaults.standard.set(activeRatio.rawValue, forKey: "activeRatio")
+        }
+    }
     var isPortrait: Bool = false
     var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
@@ -119,7 +129,7 @@ final class CameraViewModel {
         if let idx = all.firstIndex(of: activeRatio) {
             activeRatio = all[(idx + 1) % all.count]
         } else {
-            activeRatio = .ratio2_1
+            activeRatio = .ratio4_3
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
