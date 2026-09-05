@@ -62,12 +62,10 @@ struct ContentView: View {
             .ignoresSafeArea(edges: .bottom)
 
             // Shutter white flash overlay
-            if shutterFlash > 0 {
-                Color.white
-                    .opacity(shutterFlash)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-            }
+            Color.white
+                .opacity(shutterFlash)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -132,13 +130,15 @@ struct ContentView: View {
         guard !isCapturing, let renderer else { return }
         isCapturing = true
 
-        // Play standard shutter click sound
-        AudioServicesPlaySystemSound(1108)
+        // Play authentic mechanical shutter click
+        ShutterAudioService.shared.play()
 
-        // Flash screen white
-        shutterFlash = 0.95
-        withAnimation(.easeOut(duration: 0.18)) {
-            shutterFlash = 0.0
+        // Screen white flash: high opacity immediately, fade out smoothly on next tick
+        shutterFlash = 1.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.easeOut(duration: 0.22)) {
+                shutterFlash = 0.0
+            }
         }
 
         Task {
@@ -212,7 +212,7 @@ private struct PortraitDeck: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            // Row 1: Telemetry
+            // Row 1: Telemetry (rotates)
             HStack {
                 let (w, h) = vm.outputSize
                 Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)")
@@ -233,11 +233,11 @@ private struct PortraitDeck: View {
 
             Divider().background(RetroTheme.border)
 
-            // Row 2: Palette Cycler
-            PaletteCycler(vm: vm, rotation: rotation)
+            // Row 2: Palette Cycler (stays horizontal, does NOT rotate)
+            PaletteCycler(vm: vm)
                 .padding(.horizontal, 14)
 
-            // Row 3: Exposure + Dither
+            // Row 3: Exposure + Dither (rotates)
             HStack(spacing: 0) {
                 EVStepper(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
@@ -249,30 +249,23 @@ private struct PortraitDeck: View {
             }
             .frame(height: 44)
 
-            // Row 4: Large centered Shutter
-            VStack(spacing: 4) {
-                ShutterButton(action: onShutter)
-                Text("SHUTTER")
-                    .font(RetroTheme.mono(7))
-                    .foregroundStyle(RetroTheme.dimText)
-                    .rotationEffect(.degrees(rotation))
-            }
-            .padding(.bottom, 24)
+            // Row 4: Shutter (text removed)
+            ShutterButton(action: onShutter)
+                .padding(.bottom, 24)
         }
         .background(RetroTheme.bg.opacity(0.95))
     }
 }
 
-// MARK: — Palette cycler  [<] NAME [>]
+// MARK: — Palette cycler  [<] NAME [>] (stays horizontal)
 
 private struct PaletteCycler: View {
     var vm: CameraViewModel
-    let rotation: Double
 
     var body: some View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
-                ArrowBtn(symbol: "<", rotation: rotation) {
+                ArrowBtn(symbol: "<") {
                     vm.cyclePalette(forward: false)
                 }
 
@@ -282,9 +275,8 @@ private struct PaletteCycler: View {
                     .frame(minWidth: 90, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .rotationEffect(.degrees(rotation))
 
-                ArrowBtn(symbol: ">", rotation: rotation) {
+                ArrowBtn(symbol: ">") {
                     vm.cyclePalette(forward: true)
                 }
             }
@@ -351,7 +343,7 @@ private struct DiamondToggle: View {
 
 private struct ArrowBtn: View {
     let symbol: String
-    let rotation: Double
+    var rotation: Double = 0.0
     let action: () -> Void
 
     var body: some View {
@@ -363,5 +355,81 @@ private struct ArrowBtn: View {
                 .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: — Shutter Audio Service (in-memory mechanical click)
+
+final class ShutterAudioService: @unchecked Sendable {
+    static let shared = ShutterAudioService()
+    private var player: AVAudioPlayer?
+
+    private init() {
+        let wav = createShutterWav()
+        player = try? AVAudioPlayer(data: wav)
+        player?.prepareToPlay()
+    }
+
+    func play() {
+        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if let player, player.isPlaying {
+            player.currentTime = 0
+            player.play()
+        } else {
+            player?.play()
+        }
+        AudioServicesPlaySystemSound(1108)
+    }
+
+    private func createShutterWav() -> Data {
+        let sampleRate: Int32 = 44100
+        let duration: Double = 0.085
+        let numSamples = Int(Double(sampleRate) * duration)
+        var samples = [Int16](repeating: 0, count: numSamples)
+
+        for i in 0..<numSamples {
+            let t = Double(i) / Double(sampleRate)
+            var s: Double = 0
+            if t < 0.02 {
+                let decay = exp(-t * 350.0)
+                let freq = 1400.0 - t * 30000.0
+                let noise = Double.random(in: -0.3...0.3)
+                s += (sin(2.0 * .pi * freq * t) + noise) * decay * 0.95
+            }
+            if t >= 0.032 && t < 0.075 {
+                let dt = t - 0.032
+                let decay = exp(-dt * 250.0)
+                let freq = 900.0 - dt * 15000.0
+                let noise = Double.random(in: -0.2...0.2)
+                s += (sin(2.0 * .pi * freq * dt) + noise) * decay * 0.9
+            }
+            s = max(-1.0, min(1.0, s))
+            samples[i] = Int16(s * 32767.0)
+        }
+
+        var data = Data()
+        data.append(contentsOf: [UInt8]("RIFF".utf8))
+        let fileSize = Int32(36 + numSamples * 2)
+        withUnsafeBytes(of: fileSize.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("WAVEfmt ".utf8))
+        let subchunk1Size: Int32 = 16
+        withUnsafeBytes(of: subchunk1Size.littleEndian) { data.append(contentsOf: $0) }
+        let audioFormat: Int16 = 1
+        withUnsafeBytes(of: audioFormat.littleEndian) { data.append(contentsOf: $0) }
+        let numChannels: Int16 = 1
+        withUnsafeBytes(of: numChannels.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: sampleRate.littleEndian) { data.append(contentsOf: $0) }
+        let byteRate = sampleRate * 2
+        withUnsafeBytes(of: byteRate.littleEndian) { data.append(contentsOf: $0) }
+        let blockAlign: Int16 = 2
+        withUnsafeBytes(of: blockAlign.littleEndian) { data.append(contentsOf: $0) }
+        let bitsPerSample: Int16 = 16
+        withUnsafeBytes(of: bitsPerSample.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("data".utf8))
+        let dataSize = Int32(numSamples * 2)
+        withUnsafeBytes(of: dataSize.littleEndian) { data.append(contentsOf: $0) }
+        samples.withUnsafeBytes { data.append(contentsOf: $0) }
+        return data
     }
 }
