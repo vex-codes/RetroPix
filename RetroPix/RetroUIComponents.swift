@@ -16,16 +16,28 @@ extension Color {
     }
 }
 
+extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(
+            red:   CGFloat((hex >> 16) & 0xFF) / 255.0,
+            green: CGFloat((hex >> 8)  & 0xFF) / 255.0,
+            blue:  CGFloat(hex         & 0xFF) / 255.0,
+            alpha: 1.0
+        )
+    }
+}
+
 // MARK: — Design tokens
 
 enum RetroTheme {
-    static let bg      = Color(hex: 0x0A0A0C)
-    static let panel   = Color(hex: 0x121214)
-    static let border  = Color(hex: 0x2A2A2E)
-    static let green   = Color(hex: 0x00FF66)
-    static let red     = Color(hex: 0xFF4438)
-    static let amber   = Color(hex: 0xFFA830)
-    static let dimText = Color(hex: 0x55575F)
+    static let bg      = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x0A0A0C) : UIColor(hex: 0xEAEAE6) })
+    static let panel   = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x121214) : UIColor(hex: 0xDFDFDA) })
+    static let border  = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x2A2A2E) : UIColor(hex: 0xBCBCB4) })
+    static let green   = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x00FF66) : UIColor(hex: 0x008833) })
+    static let red     = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xFF4438) : UIColor(hex: 0xD92218) })
+    static let amber   = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xFFA830) : UIColor(hex: 0xB85C00) })
+    static let dimText = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x55575F) : UIColor(hex: 0x767880) })
+    static let text    = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? .white : UIColor(hex: 0x141416) })
 
     static func mono(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
@@ -46,7 +58,7 @@ struct ShutterButton: View {
                 .frame(width: 56, height: 56)
             // Mid ring
             Circle()
-                .fill(Color(hex: 0x1C1214))
+                .fill(RetroTheme.panel)
                 .overlay(Circle().stroke(RetroTheme.red, lineWidth: 1.5))
                 .frame(width: 46, height: 46)
             // Inner dot

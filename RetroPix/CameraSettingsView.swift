@@ -34,6 +34,24 @@ struct CameraSettingsView: View {
 
                         Divider().background(RetroTheme.border)
 
+                        // ── Appearance ────────────────────────────────────────
+                        SectionHeader(title: "APPEARANCE", sub: "Toggle light or dark interface")
+
+                        Toggle(isOn: Binding(
+                            get: { vm.isDarkMode },
+                            set: {
+                                vm.isDarkMode = $0
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                        )) {
+                            Text(vm.isDarkMode ? "DARK MODE" : "LIGHT MODE")
+                                .font(RetroTheme.mono(11))
+                                .foregroundStyle(vm.isDarkMode ? RetroTheme.green : RetroTheme.amber)
+                        }
+                        .tint(RetroTheme.green)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+
                         // ── Aspect Ratio Picker ──────────────────────────────
                         SectionHeader(title: "FRAME ASPECT RATIO", sub: "Select sensor crop & internal grid")
 
@@ -220,7 +238,7 @@ struct CameraSettingsView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(vm.isDarkMode ? .dark : .light)
     }
 }
 
@@ -262,7 +280,7 @@ private struct PaletteCard: View {
                     HStack(spacing: 6) {
                         Text(palette.name)
                             .font(RetroTheme.mono(12))
-                            .foregroundStyle(isActive ? RetroTheme.red : Color.white)
+                            .foregroundStyle(isActive ? RetroTheme.red : RetroTheme.text)
 
                         if isActive {
                             Text("▶ ACTIVE")

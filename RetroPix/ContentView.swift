@@ -22,7 +22,7 @@ struct ContentView: View {
 
         ZStack {
             // Base background
-            Color.black.ignoresSafeArea()
+            RetroTheme.bg.ignoresSafeArea()
 
             // Main vertical layout: Top Bar → Viewfinder Frame → Control Deck
             VStack(spacing: 0) {
@@ -69,6 +69,7 @@ struct ContentView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .preferredColorScheme(vm.isDarkMode ? .dark : .light)
         .onAppear {
             vm.isPortrait = true
             vm.orientation = 1
@@ -271,7 +272,7 @@ private struct PaletteCycler: View {
 
                 Text(vm.activePalette.name)
                     .font(RetroTheme.mono(11))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(RetroTheme.text)
                     .frame(minWidth: 90, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)

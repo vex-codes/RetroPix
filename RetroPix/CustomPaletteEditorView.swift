@@ -146,7 +146,7 @@ struct CustomPaletteEditorView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(vm.isDarkMode ? .dark : .light)
     }
 
     private func sortLuminance() {

@@ -18,7 +18,11 @@ final class CameraViewModel {
     var baseZoomFactor: CGFloat = 1.0
 
     var palettes: [Palette] = Palette.loadPalettes()
-
+    var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode")
+        }
+    }
 
     var activePalette: Palette {
         guard !palettes.isEmpty else { return Palette.def }
