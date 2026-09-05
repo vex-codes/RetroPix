@@ -133,6 +133,18 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Adjusts the camera zoom factor (1.0 ... maxAvailable, clamped to 6.0 max).
+    func setZoom(_ factor: CGFloat) {
+        sessionQueue.async { [weak self] in
+            guard let camera = self?.currentCamera else { return }
+            try? camera.lockForConfiguration()
+            let maxZoom = min(camera.activeFormat.videoMaxZoomFactor, 6.0)
+            let clamped = max(1.0, min(factor, maxZoom))
+            camera.videoZoomFactor = clamped
+            camera.unlockForConfiguration()
+        }
+    }
+
 }
 
 // MARK: — AVCaptureVideoDataOutputSampleBufferDelegate

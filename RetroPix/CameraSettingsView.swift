@@ -1,6 +1,6 @@
 // CameraSettingsView.swift
 // RetroPix — Dedicated 90s-industrial configuration sheet.
-// Palette configuration with full swatch cards + continuous dither slider + aspect ratio picker.
+// Palette management (rename/delete/create/generate), aspect ratio picker, and continuous dither engine.
 
 import SwiftUI
 
@@ -8,6 +8,10 @@ struct CameraSettingsView: View {
     var vm: CameraViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showPaletteEditor = false
+
+    @State private var showRenameAlert = false
+    @State private var paletteToRename: Palette?
+    @State private var renameText = ""
 
     var body: some View {
         NavigationStack {
@@ -49,41 +53,94 @@ struct CameraSettingsView: View {
 
                         Divider().background(RetroTheme.border).padding(.vertical, 16)
 
-                        // ── Palette Configuration ─────────────────────────────
-                        HStack {
-                            SectionHeader(title: "PALETTE CONFIGURATION", sub: "Tap to activate palette")
-                            Spacer()
+                        // ── Palette Creation & Generation ─────────────────────
+                        SectionHeader(title: "PALETTE CREATOR & GENERATOR", sub: "Synthesize harmonic or custom palettes")
+
+                        HStack(spacing: 10) {
+                            Button {
+                                vm.generateRandomPalette()
+                            } label: {
+                                Text("[ + HARMONIC RANDOM ]")
+                                    .font(RetroTheme.mono(10))
+                                    .foregroundStyle(RetroTheme.amber)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(RetroTheme.amber.opacity(0.08))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .stroke(RetroTheme.amber.opacity(0.4), lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+
                             Button {
                                 showPaletteEditor = true
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             } label: {
-                                Text("+ STUDIO")
+                                Text("[ + CUSTOM STUDIO ]")
                                     .font(RetroTheme.mono(10))
                                     .foregroundStyle(RetroTheme.green)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 5)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
                                     .background(
                                         RoundedRectangle(cornerRadius: 3)
-                                            .fill(RetroTheme.green.opacity(0.1))
+                                            .fill(RetroTheme.green.opacity(0.08))
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 3)
                                                     .stroke(RetroTheme.green.opacity(0.4), lineWidth: 1)
                                             )
                                     )
                             }
-                            .padding(.trailing, 20)
+                            .buttonStyle(.plain)
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+
+                        Divider().background(RetroTheme.border).padding(.vertical, 14)
+
+                        // ── Palette Configuration & Management ────────────────
+                        SectionHeader(title: "PALETTE MANAGEMENT", sub: "Tap to activate. Rename or delete below.")
 
                         VStack(spacing: 10) {
-                            ForEach(Array(vm.allPalettes.enumerated()), id: \.element.id) { idx, palette in
+                            ForEach(Array(vm.palettes.enumerated()), id: \.element.id) { idx, palette in
                                 PaletteCard(
                                     palette: palette,
-                                    isActive: vm.activePaletteIndex == idx
-                                ) {
-                                    vm.activePaletteIndex = idx
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                }
+                                    isActive: vm.activePaletteIndex == idx,
+                                    canDelete: vm.palettes.count > 1,
+                                    onTap: {
+                                        vm.activePaletteIndex = idx
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    },
+                                    onRename: {
+                                        paletteToRename = palette
+                                        renameText = palette.name
+                                        showRenameAlert = true
+                                    },
+                                    onDelete: {
+                                        vm.deletePalette(id: palette.id)
+                                    }
+                                )
                             }
+
+                            // Restore defaults button
+                            Button {
+                                vm.resetPalettesToDefault()
+                            } label: {
+                                Text("[ RESTORE DEFAULT PALETTES ]")
+                                    .font(RetroTheme.mono(10))
+                                    .foregroundStyle(RetroTheme.dimText)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .stroke(RetroTheme.border, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 6)
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 6)
@@ -153,6 +210,15 @@ struct CameraSettingsView: View {
             .sheet(isPresented: $showPaletteEditor) {
                 CustomPaletteEditorView(vm: vm)
             }
+            .alert("RENAME PALETTE", isPresented: $showRenameAlert) {
+                TextField("NEW NAME", text: $renameText)
+                Button("CANCEL", role: .cancel) {}
+                Button("SAVE") {
+                    if let pal = paletteToRename {
+                        vm.renamePalette(id: pal.id, newName: renameText)
+                    }
+                }
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -178,42 +244,86 @@ private struct SectionHeader: View {
     }
 }
 
-// MARK: — Palette card with swatch bar
+// MARK: — Palette card with swatch bar + actions
 
 private struct PaletteCard: View {
     let palette: Palette
     let isActive: Bool
+    let canDelete: Bool
     let onTap: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(palette.name)
-                        .font(RetroTheme.mono(12))
-                        .foregroundStyle(isActive ? RetroTheme.red : Color.white)
-                    Spacer()
-                    if isActive {
-                        Text("▶ ACTIVE")
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: Name, Active indicator, Rename and Delete buttons
+            HStack {
+                Button(action: onTap) {
+                    HStack(spacing: 6) {
+                        Text(palette.name)
+                            .font(RetroTheme.mono(12))
+                            .foregroundStyle(isActive ? RetroTheme.red : Color.white)
+
+                        if isActive {
+                            Text("▶ ACTIVE")
+                                .font(RetroTheme.mono(9))
+                                .foregroundStyle(RetroTheme.red)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Rename button
+                Button(action: onRename) {
+                    Text("[EDIT]")
+                        .font(RetroTheme.mono(9))
+                        .foregroundStyle(RetroTheme.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 2)
+                                .stroke(RetroTheme.green.opacity(0.4), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                // Delete button
+                if canDelete {
+                    Button(action: onDelete) {
+                        Text("[DEL]")
                             .font(RetroTheme.mono(9))
                             .foregroundStyle(RetroTheme.red)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 2)
+                                    .stroke(RetroTheme.red.opacity(0.4), lineWidth: 1)
+                            )
                     }
-                    Text("\(palette.count) CLR")
-                        .font(RetroTheme.mono(9, weight: .regular))
-                        .foregroundStyle(RetroTheme.dimText)
+                    .buttonStyle(.plain)
                 }
+
+                Text("\(palette.count) CLR")
+                    .font(RetroTheme.mono(9, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+
+            // Swatch bar
+            Button(action: onTap) {
                 ColorSwatchBar(palette: palette, height: 22)
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(RetroTheme.panel)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(isActive ? RetroTheme.red : RetroTheme.border, lineWidth: isActive ? 1.5 : 1)
-                    )
-            )
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(RetroTheme.panel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isActive ? RetroTheme.red : RetroTheme.border, lineWidth: isActive ? 1.5 : 1)
+                )
+        )
     }
 }

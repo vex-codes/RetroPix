@@ -1,10 +1,7 @@
 // ContentView.swift
 // RetroPix — Primary layout: Metal feed behind an orientation-adaptive retro OSD + control deck.
-//
-// Layout modes:
-//   Landscape: TopOSDBar (40pt) → Viewfinder → Horizontal BottomDeck (72pt)
-//   Portrait:  TopOSDBar (40pt) → Viewfinder → Multi-row Brutalist Control Deck
 
+import AudioToolbox
 import AVFoundation
 import Photos
 import SwiftUI
@@ -17,46 +14,64 @@ struct ContentView: View {
     @State private var renderer: MetalRenderer?
     @State private var isCapturing   = false
     @State private var showSettings  = false
+    @State private var shutterFlash  = 0.0
 
     var body: some View {
         GeometryReader { geo in
             let isPortrait = geo.size.height > geo.size.width
             let orientation: UInt32 = isPortrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
 
-            ZStack(alignment: .top) {
-                // ── 1. Black base ─────────────────────────────────────────────
+            ZStack {
+                // Base background
                 Color.black.ignoresSafeArea()
 
-                // ── 2. Metal viewfinder ───────────────────────────────────────
-                if let renderer {
-                    MetalView(renderer: renderer)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                }
+                // Main vertical flow: Top Bar → Viewfinder Frame → Control Deck
+                VStack(spacing: 0) {
+                    TopOSDBar(vm: vm, onMenu: { showSettings = true })
 
-                // ── 3. OSD rails ──────────────────────────────────────────────
-                if isPortrait {
-                    VStack(spacing: 0) {
-                        TopOSDBar(vm: vm, onMenu: { showSettings = true })
+                    // Middle Viewfinder container: strict aspect ratio fit, pinch to zoom
+                    let (w, h) = vm.outputSize
+                    let aspect = CGFloat(w) / CGFloat(h)
 
-                        CrosshairOverlay()
+                    ZStack {
+                        Color.black
 
-                        Spacer()
-
-                        PortraitDeck(vm: vm, onShutter: triggerCapture)
+                        if let renderer {
+                            ZStack {
+                                MetalView(renderer: renderer)
+                                CrosshairOverlay()
+                            }
+                            .aspectRatio(aspect, contentMode: .fit)
+                            .clipped()
+                        }
                     }
-                    .ignoresSafeArea(edges: .bottom)
-                } else {
-                    VStack(spacing: 0) {
-                        TopOSDBar(vm: vm, onMenu: { showSettings = true })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                vm.updateZoom(magnification: value)
+                            }
+                            .onEnded { _ in
+                                vm.commitZoom()
+                            }
+                    )
 
-                        CrosshairOverlay()
-
-                        Spacer()
-
+                    // Bottom controls
+                    if isPortrait {
+                        PortraitDeck(vm: vm, onShutter: triggerCapture)
+                    } else {
                         BottomDeck(vm: vm, onShutter: triggerCapture)
                     }
-                    .ignoresSafeArea(edges: .bottom)
+                }
+                .ignoresSafeArea(edges: .bottom)
+
+                // Shutter white flash overlay
+                if shutterFlash > 0 {
+                    Color.white
+                        .opacity(shutterFlash)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
                 }
             }
             .onAppear {
@@ -105,6 +120,9 @@ struct ContentView: View {
         .onChange(of: vm.activeRatio) { _, _ in
             updateRendererConfig()
         }
+        .onChange(of: vm.zoomFactor) { _, newZoom in
+            cameraManager.setZoom(newZoom)
+        }
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(vm: vm)
         }
@@ -134,6 +152,16 @@ struct ContentView: View {
     func triggerCapture() {
         guard !isCapturing, let renderer else { return }
         isCapturing = true
+
+        // Play standard shutter click sound
+        AudioServicesPlaySystemSound(1108)
+
+        // Flash screen white
+        shutterFlash = 0.95
+        withAnimation(.easeOut(duration: 0.18)) {
+            shutterFlash = 0.0
+        }
+
         Task {
             defer { isCapturing = false }
             try? await CaptureService.capture(from: renderer)
@@ -149,10 +177,6 @@ private struct TopOSDBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            OSDPill()
-
-            Spacer()
-
             // Aspect ratio quick switchers
             HStack(spacing: 6) {
                 ForEach(AspectRatio.allCases) { ratio in
@@ -176,8 +200,8 @@ private struct TopOSDBar: View {
                 Text("≡ MENU")
                     .font(RetroTheme.mono(10))
                     .foregroundStyle(RetroTheme.green)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 3)
                             .fill(RetroTheme.green.opacity(0.07))
@@ -190,7 +214,7 @@ private struct TopOSDBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
-        .background(RetroTheme.bg.opacity(0.92))
+        .background(RetroTheme.bg.opacity(0.95))
     }
 }
 
@@ -202,11 +226,8 @@ private struct BottomDeck: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 6) {
-                PaletteCycler(vm: vm)
-                RandButton { vm.generateRandomPalette() }
-            }
-            .frame(maxWidth: .infinity)
+            PaletteCycler(vm: vm)
+                .frame(maxWidth: .infinity)
 
             DeckDivider()
 
@@ -230,7 +251,7 @@ private struct BottomDeck: View {
             .frame(maxWidth: .infinity)
         }
         .frame(height: 72)
-        .background(RetroTheme.bg.opacity(0.92))
+        .background(RetroTheme.bg.opacity(0.95))
     }
 }
 
@@ -241,7 +262,7 @@ private struct PortraitDeck: View {
     let onShutter: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             // Row 1: Telemetry
             HStack {
                 let (w, h) = vm.outputSize
@@ -249,7 +270,8 @@ private struct PortraitDeck: View {
                     .font(RetroTheme.mono(9))
                     .foregroundStyle(RetroTheme.amber)
                 Spacer()
-                Text(String(format: "EV %+.1f  DITHER %@", vm.evBias, vm.ditherLabel))
+                let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
+                Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
                     .font(RetroTheme.mono(8, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
@@ -258,12 +280,9 @@ private struct PortraitDeck: View {
 
             Divider().background(RetroTheme.border)
 
-            // Row 2: Palette Cycler + RAND button
-            HStack(spacing: 10) {
-                PaletteCycler(vm: vm)
-                RandButton { vm.generateRandomPalette() }
-            }
-            .padding(.horizontal, 14)
+            // Row 2: Palette Cycler
+            PaletteCycler(vm: vm)
+                .padding(.horizontal, 14)
 
             // Row 3: Exposure + Dither
             HStack(spacing: 0) {
@@ -301,9 +320,9 @@ private struct PaletteCycler: View {
                 ArrowBtn(symbol: "<") { vm.cyclePalette(forward: false) }
 
                 Text(vm.activePalette.name)
-                    .font(RetroTheme.mono(10))
+                    .font(RetroTheme.mono(11))
                     .foregroundStyle(.white)
-                    .frame(minWidth: 72, alignment: .center)
+                    .frame(minWidth: 90, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
@@ -371,7 +390,7 @@ private struct ArrowBtn: View {
             Text(symbol)
                 .font(RetroTheme.mono(14))
                 .foregroundStyle(RetroTheme.green)
-                .frame(width: 30, height: 44)
+                .frame(width: 32, height: 44)
         }
         .buttonStyle(.plain)
     }

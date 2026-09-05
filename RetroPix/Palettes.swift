@@ -40,6 +40,10 @@ struct Palette: Identifiable, Codable, Equatable, Sendable {
 
     var count: Int { colors.count }
 
+    func withName(_ newName: String) -> Palette {
+        Palette(id: id, name: newName, colors: colors)
+    }
+
     /// 8 × SIMD4<Float> ready for MTLBuffer — avoids float3 GPU alignment issues.
     var gpuColors: [SIMD4<Float>] {
         var r = colors.map { SIMD4<Float>($0.r, $0.g, $0.b, 0) }
@@ -139,19 +143,31 @@ struct Palette: Identifiable, Codable, Equatable, Sendable {
 
     static let all: [Palette] = [.def, .midnight, .ammo, .ancient, .autumn, .brkfst, .dream, .originalGB]
 
-    // MARK: — Custom palette persistence
+    // MARK: — Palette persistence
 
-    static let customPalettesKey = "retropix_custom_palettes"
+    static let palettesKey = "retropix_user_palettes"
 
-    static func loadCustomPalettes() -> [Palette] {
-        guard let data = UserDefaults.standard.data(forKey: customPalettesKey),
-              let list = try? JSONDecoder().decode([Palette].self, from: data) else { return [] }
+    static func loadPalettes() -> [Palette] {
+        guard let data = UserDefaults.standard.data(forKey: palettesKey),
+              let list = try? JSONDecoder().decode([Palette].self, from: data),
+              !list.isEmpty else {
+            return Palette.all
+        }
         return list
     }
 
-    static func saveCustomPalettes(_ palettes: [Palette]) {
+    static func savePalettes(_ palettes: [Palette]) {
         if let data = try? JSONEncoder().encode(palettes) {
-            UserDefaults.standard.set(data, forKey: customPalettesKey)
+            UserDefaults.standard.set(data, forKey: palettesKey)
         }
     }
+
+    static func resetToDefaults() -> [Palette] {
+        savePalettes(Palette.all)
+        return Palette.all
+    }
+
+    // Backwards compatibility
+    static func loadCustomPalettes() -> [Palette] { loadPalettes() }
+    static func saveCustomPalettes(_ palettes: [Palette]) { savePalettes(palettes) }
 }

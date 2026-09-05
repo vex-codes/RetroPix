@@ -13,17 +13,25 @@ final class CameraViewModel {
     var isPortrait: Bool = false
     var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
-    var customPalettes: [Palette] = Palette.loadCustomPalettes()
+    // Pinch-to-zoom state
+    var zoomFactor: CGFloat = 1.0
+    var baseZoomFactor: CGFloat = 1.0
+
+    var palettes: [Palette] = Palette.loadPalettes()
 
     var allPalettes: [Palette] {
-        Palette.all + customPalettes
+        palettes
+    }
+
+    var customPalettes: [Palette] {
+        get { palettes }
+        set { palettes = newValue }
     }
 
     var activePalette: Palette {
-        let list = allPalettes
-        guard !list.isEmpty else { return Palette.def }
-        let safeIdx = (activePaletteIndex % list.count + list.count) % list.count
-        return list[safeIdx]
+        guard !palettes.isEmpty else { return Palette.def }
+        let safeIdx = (activePaletteIndex % palettes.count + palettes.count) % palettes.count
+        return palettes[safeIdx]
     }
 
     /// Internal rendering resolution for active ratio and orientation
@@ -41,10 +49,21 @@ final class CameraViewModel {
         }
     }
 
-    // MARK: — Actions (all include selection haptic)
+    // MARK: — Zoom Actions
+
+    func updateZoom(magnification: CGFloat) {
+        let newZoom = max(1.0, min(baseZoomFactor * magnification, 6.0))
+        zoomFactor = newZoom
+    }
+
+    func commitZoom() {
+        baseZoomFactor = zoomFactor
+    }
+
+    // MARK: — Palette Actions
 
     func cyclePalette(forward: Bool) {
-        let count = allPalettes.count
+        let count = palettes.count
         guard count > 0 else { return }
         activePaletteIndex = (activePaletteIndex + (forward ? 1 : count - 1)) % count
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -52,32 +71,56 @@ final class CameraViewModel {
 
     func generateRandomPalette() {
         let pal = HarmonicPaletteGenerator.generate(count: Int.random(in: 5...8))
-        customPalettes.append(pal)
-        Palette.saveCustomPalettes(customPalettes)
-        activePaletteIndex = allPalettes.count - 1
+        palettes.append(pal)
+        Palette.savePalettes(palettes)
+        activePaletteIndex = palettes.count - 1
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     func addCustomPalette(_ palette: Palette) {
-        customPalettes.append(palette)
-        Palette.saveCustomPalettes(customPalettes)
-        activePaletteIndex = allPalettes.count - 1
+        palettes.append(palette)
+        Palette.savePalettes(palettes)
+        activePaletteIndex = palettes.count - 1
+    }
+
+    func deletePalette(id: String) {
+        guard palettes.count > 1 else { return }
+        palettes.removeAll { $0.id == id }
+        Palette.savePalettes(palettes)
+        if activePaletteIndex >= palettes.count {
+            activePaletteIndex = max(0, palettes.count - 1)
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     func deleteCustomPalette(id: String) {
-        customPalettes.removeAll { $0.id == id }
-        Palette.saveCustomPalettes(customPalettes)
-        if activePaletteIndex >= allPalettes.count {
-            activePaletteIndex = max(0, allPalettes.count - 1)
+        deletePalette(id: id)
+    }
+
+    func renamePalette(id: String, newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let idx = palettes.firstIndex(where: { $0.id == id }) {
+            palettes[idx] = palettes[idx].withName(trimmed)
+            Palette.savePalettes(palettes)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }
 
+    func resetPalettesToDefault() {
+        palettes = Palette.resetToDefaults()
+        activePaletteIndex = 0
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
     func reloadCustomPalettes() {
-        customPalettes = Palette.loadCustomPalettes()
-        if activePaletteIndex >= allPalettes.count {
-            activePaletteIndex = max(0, allPalettes.count - 1)
+        palettes = Palette.loadPalettes()
+        if activePaletteIndex >= palettes.count {
+            activePaletteIndex = max(0, palettes.count - 1)
         }
     }
+
+    // MARK: — Camera Controls
 
     func stepEV(up: Bool) {
         evBias = max(-2.0, min(2.0, evBias + (up ? 0.5 : -0.5)))

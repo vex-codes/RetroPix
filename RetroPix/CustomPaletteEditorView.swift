@@ -89,8 +89,8 @@ struct CustomPaletteEditorView: View {
                                             colors.remove(at: idx)
                                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                         } label: {
-                                            Text("✕")
-                                                .font(RetroTheme.mono(11))
+                                            Text("[X]")
+                                                .font(RetroTheme.mono(10))
                                                 .foregroundStyle(RetroTheme.red)
                                                 .frame(width: 32, height: 32)
                                         }

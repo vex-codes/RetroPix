@@ -32,33 +32,6 @@ enum RetroTheme {
     }
 }
 
-// MARK: — OSD phosphor-green status pill  [● ONLINE]
-
-struct OSDPill: View {
-    @State private var blink = false
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(RetroTheme.green)
-                .frame(width: 6, height: 6)
-                .opacity(blink ? 0.3 : 1.0)
-                .animation(.easeInOut(duration: 1.2).repeatForever(), value: blink)
-            Text("ONLINE")
-                .font(RetroTheme.mono(9))
-                .foregroundStyle(RetroTheme.green)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(RetroTheme.green.opacity(0.08))
-                .overlay(Capsule().stroke(RetroTheme.green.opacity(0.4), lineWidth: 1))
-        )
-        .onAppear { blink = true }
-    }
-}
-
 // MARK: — Tactile shutter button  ◉
 
 struct ShutterButton: View {
@@ -190,7 +163,7 @@ struct RandButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text("🎲 RAND")
+            Text("RAND")
                 .font(RetroTheme.mono(9))
                 .foregroundStyle(RetroTheme.amber)
                 .padding(.horizontal, 7)
