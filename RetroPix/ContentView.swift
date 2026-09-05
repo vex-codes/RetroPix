@@ -176,25 +176,27 @@ private struct TopOSDBar: View {
 
             Spacer()
 
-            // Menu button
+            // Menu button (three lines, square 28×28 so it never clips on rotation)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onMenu()
             } label: {
-                Text("≡ MENU")
-                    .font(RetroTheme.mono(10))
-                    .foregroundStyle(RetroTheme.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(RetroTheme.green.opacity(0.07))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(RetroTheme.green.opacity(0.45), lineWidth: 1)
-                            )
-                    )
+                VStack(spacing: 3) {
+                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
+                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
+                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
+                }
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(RetroTheme.green.opacity(0.07))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(RetroTheme.green.opacity(0.45), lineWidth: 1)
+                        )
+                )
             }
+            .frame(width: 44, height: 44)
             .rotationEffect(.degrees(rotation))
         }
         .padding(.horizontal, 12)
