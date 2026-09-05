@@ -155,3 +155,56 @@ struct DeckDivider: View {
             .padding(.vertical, 10)
     }
 }
+
+// MARK: — Ratio Button
+
+struct RatioButton: View {
+    let label: String
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(RetroTheme.mono(9))
+                .foregroundStyle(isActive ? RetroTheme.bg : RetroTheme.amber)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(isActive ? RetroTheme.amber : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(RetroTheme.amber.opacity(0.5), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: — Procedural Palette Randomizer Button
+
+struct RandButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text("🎲 RAND")
+                .font(RetroTheme.mono(9))
+                .foregroundStyle(RetroTheme.amber)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(RetroTheme.amber.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(RetroTheme.amber.opacity(0.4), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+

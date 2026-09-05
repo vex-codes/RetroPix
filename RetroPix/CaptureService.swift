@@ -1,8 +1,8 @@
 // CaptureService.swift
 // RetroPix — Photo capture, upscale, and save pipeline.
 //
-// Flow: MetalRenderer readback (256×128 UIImage)
-//     → CoreGraphics 8× nearest-neighbor upscale → 2048×1024 PNG
+// Flow: MetalRenderer readback (active resolution UIImage)
+//     → CoreGraphics 8× nearest-neighbor upscale
 //     → PHPhotoLibrary save
 //     → UIImpactFeedbackGenerator(.rigid) haptic pop
 
@@ -12,18 +12,21 @@ import UIKit
 
 enum CaptureService {
 
-    /// Captures the current 256×128 pixel texture, upscales 8× with strictly
+    /// Captures the current pixel texture, upscales 8× with strictly
     /// nearest-neighbor interpolation, saves to the Photo Library, and fires haptic.
-    /// Throws if PHPhotoLibrary save fails.
     @MainActor
     static func capture(from renderer: MetalRenderer) async throws {
-        // 1. Readback — runs synchronously but only briefly (GPU flush + memcpy of 256×128)
+        // 1. Readback — runs synchronously but only briefly (GPU flush + memcpy of pixel texture)
         guard let source = renderer.capturePixelImage() else { return }
         guard let cgSource = source.cgImage else { return }
 
-        // 2. Upscale 8× → 2048×1024, nearest-neighbor (no blurring, pure pixel blocks)
-        let targetW = 256 * 8   // 2048
-        let targetH = 128 * 8   // 1024
+        // 2. Upscale 8×, nearest-neighbor (no blurring, pure pixel blocks)
+        let outW = renderer.outputWidth
+        let outH = renderer.outputHeight
+        guard outW > 0, outH > 0 else { return }
+
+        let targetW = outW * 8
+        let targetH = outH * 8
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(
@@ -46,7 +49,7 @@ enum CaptureService {
             PHAssetChangeRequest.creationRequestForAsset(from: upscaled)
         }
 
-        // 4. Haptic pop — the only feedback the user gets (no chimping)
+        // 4. Haptic pop
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
     }
 

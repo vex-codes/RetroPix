@@ -1,8 +1,8 @@
 // PixelShader.metal
 // RetroPix — Custom GPU rendering pipeline.
 //
-// Compute kernel:  camera texture → 256×128 dithered + palette-quantized texture.
-// Vertex+fragment: 256×128 pixel texture → fullscreen letterboxed drawable (nearest-neighbor).
+// Compute kernel:  camera texture → dynamic dithered + palette-quantized texture.
+// Vertex+fragment: pixel texture → fullscreen letterboxed drawable (nearest-neighbor).
 
 #include <metal_stdlib>
 using namespace metal;
@@ -22,15 +22,8 @@ constant int bayer8[64] = {
     63, 31, 55, 23, 61, 29, 53, 21
 };
 
-// Camera crop constants — 720p (1280×720) → 2:1 center (1280×640).
-// Vertical offset = (720 − 640) / 2 = 40 px → 40/720 ≈ 0.05556
-constant float CROP_V0 = 40.0 / 720.0;
-constant float CROP_V1 = 680.0 / 720.0;
-
-// Dither spread is now a per-frame uniform — see MetalRenderer.ditherSpread.
-
 // ---------------------------------------------------------------------------
-// MARK: — Compute kernel: camera → 256×128 dithered pixel art
+// MARK: — Compute kernel: camera → dynamic dithered pixel art
 // ---------------------------------------------------------------------------
 kernel void pixelKernel(
     texture2d<float, access::sample>  cameraTexture  [[texture(0)]],
@@ -38,14 +31,33 @@ kernel void pixelKernel(
     constant float4                  *palette        [[buffer(0)]],   // up to 8 × float4(r,g,b,0)
     constant uint                    &paletteCount   [[buffer(1)]],
     constant float                   &ditherSpread   [[buffer(2)]],   // 0.0–1.0 from CameraViewModel
+    constant uint2                   &outputSize     [[buffer(3)]],   // internal resolution (e.g. 256×128)
+    constant float4                  &cropUV         [[buffer(4)]],   // crop bounds: (u0, v0, u1, v1)
+    constant uint                    &orientation    [[buffer(5)]],   // 0: landscapeRight, 1: portrait, 2: landscapeLeft
     uint2                             gid            [[thread_position_in_grid]])
 {
-    if (gid.x >= 256u || gid.y >= 128u) return;
+    if (gid.x >= outputSize.x || gid.y >= outputSize.y) return;
 
-    // --- 1. Sample camera texture at pixel center (with 2:1 center crop) ---
+    // --- 1. Compute normalized sample coordinates inside output grid ---
+    float nx = (float(gid.x) + 0.5) / float(outputSize.x);
+    float ny = (float(gid.y) + 0.5) / float(outputSize.y);
+
+    float u, v;
+    if (orientation == 1u) {
+        // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
+        u = cropUV.x + ny * (cropUV.z - cropUV.x);
+        v = cropUV.w - nx * (cropUV.w - cropUV.y);
+    } else if (orientation == 2u) {
+        // Landscape Left: 180° rotation
+        u = cropUV.z - nx * (cropUV.z - cropUV.x);
+        v = cropUV.w - ny * (cropUV.w - cropUV.y);
+    } else {
+        // Landscape Right: default native sensor orientation
+        u = cropUV.x + nx * (cropUV.z - cropUV.x);
+        v = cropUV.y + ny * (cropUV.w - cropUV.y);
+    }
+
     constexpr sampler s(filter::linear, address::clamp_to_edge);
-    float u = (float(gid.x) + 0.5) / 256.0;
-    float v = CROP_V0 + ((float(gid.y) + 0.5) / 128.0) * (CROP_V1 - CROP_V0);
     float3 color = cameraTexture.sample(s, float2(u, v)).rgb;
 
     // --- 2. Bayer threshold in [−0.5, +0.5] ---
@@ -72,25 +84,21 @@ kernel void pixelKernel(
 }
 
 // ---------------------------------------------------------------------------
-// MARK: — Fullscreen blit (nearest-neighbor upscale 256×128 → screen)
+// MARK: — Fullscreen blit (nearest-neighbor upscale → screen)
 // ---------------------------------------------------------------------------
 struct VertexOut {
     float4 position [[position]];
     float2 texCoord;
 };
 
-// `scale` shrinks the quad for letterboxing when screen aspect ≠ 2:1.
-// Pass float2(1,1) for fill, or e.g. float2(0.92,1) to add side bars.
 vertex VertexOut blitVertex(
     uint             vid   [[vertex_id]],
     constant float2 &scale [[buffer(0)]])
 {
-    // Two-triangle quad covering [−scale, +scale] in NDC.
     float2 pos[6] = {
         float2(-1, -1), float2( 1, -1), float2(-1,  1),
         float2( 1, -1), float2( 1,  1), float2(-1,  1)
     };
-    // UV: (0,0)=top-left, (1,1)=bottom-right — matches Metal texture convention.
     float2 uv[6] = {
         float2(0, 1), float2(1, 1), float2(0, 0),
         float2(1, 1), float2(1, 0), float2(0, 0)
@@ -106,7 +114,7 @@ fragment float4 blitFragment(
     VertexOut                        in  [[stage_in]],
     texture2d<float, access::sample> tex [[texture(0)]])
 {
-    // nearest: hard pixel edges — this is the entire point of the app.
+    // nearest: hard pixel edges — essential retro aesthetic
     constexpr sampler s(filter::nearest, address::clamp_to_edge);
     return tex.sample(s, in.texCoord);
 }

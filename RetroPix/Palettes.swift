@@ -1,19 +1,39 @@
 // Palettes.swift
-// RetroPix — 8 curated retro color palettes.
+// RetroPix — Curated retro color palettes + persistence.
 // Each palette packs to [SIMD4<Float>] (rgb + w=0) for Metal buffer upload.
 
+import Foundation
 import simd
 
-struct RetroColor {
+struct RetroColor: Codable, Equatable, Sendable {
     let r, g, b: Float
+
+    init(r: Float, g: Float, b: Float) {
+        self.r = max(0, min(1, r))
+        self.g = max(0, min(1, g))
+        self.b = max(0, min(1, b))
+    }
+
     init(hex: UInt32) {
-        r = Float((hex >> 16) & 0xFF) / 255.0
-        g = Float((hex >> 8) & 0xFF) / 255.0
-        b = Float(hex & 0xFF) / 255.0
+        self.r = Float((hex >> 16) & 0xFF) / 255.0
+        self.g = Float((hex >> 8) & 0xFF) / 255.0
+        self.b = Float(hex & 0xFF) / 255.0
+    }
+
+    var hex: UInt32 {
+        let ir = UInt32(round(r * 255.0))
+        let ig = UInt32(round(g * 255.0))
+        let ib = UInt32(round(b * 255.0))
+        return (ir << 16) | (ig << 8) | ib
+    }
+
+    /// Rec. 709 relative luminance
+    var luminance: Float {
+        0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 }
 
-struct Palette: Identifiable {
+struct Palette: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let name: String
     let colors: [RetroColor]
@@ -118,4 +138,20 @@ struct Palette: Identifiable {
     ])
 
     static let all: [Palette] = [.def, .midnight, .ammo, .ancient, .autumn, .brkfst, .dream, .originalGB]
+
+    // MARK: — Custom palette persistence
+
+    static let customPalettesKey = "retropix_custom_palettes"
+
+    static func loadCustomPalettes() -> [Palette] {
+        guard let data = UserDefaults.standard.data(forKey: customPalettesKey),
+              let list = try? JSONDecoder().decode([Palette].self, from: data) else { return [] }
+        return list
+    }
+
+    static func saveCustomPalettes(_ palettes: [Palette]) {
+        if let data = try? JSONEncoder().encode(palettes) {
+            UserDefaults.standard.set(data, forKey: customPalettesKey)
+        }
+    }
 }

@@ -1,12 +1,13 @@
 // CameraSettingsView.swift
 // RetroPix — Dedicated 90s-industrial configuration sheet.
-// Palette configuration with full swatch cards + continuous dither slider.
+// Palette configuration with full swatch cards + continuous dither slider + aspect ratio picker.
 
 import SwiftUI
 
 struct CameraSettingsView: View {
     var vm: CameraViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showPaletteEditor = false
 
     var body: some View {
         NavigationStack {
@@ -29,11 +30,52 @@ struct CameraSettingsView: View {
 
                         Divider().background(RetroTheme.border)
 
+                        // ── Aspect Ratio Picker ──────────────────────────────
+                        SectionHeader(title: "FRAME ASPECT RATIO", sub: "Select sensor crop & internal grid")
+
+                        HStack(spacing: 10) {
+                            ForEach(AspectRatio.allCases) { ratio in
+                                RatioButton(
+                                    label: ratio.displayLabel,
+                                    isActive: vm.activeRatio == ratio
+                                ) {
+                                    vm.activeRatio = ratio
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+
+                        Divider().background(RetroTheme.border).padding(.vertical, 16)
+
                         // ── Palette Configuration ─────────────────────────────
-                        SectionHeader(title: "PALETTE CONFIGURATION", sub: "Tap to activate palette")
+                        HStack {
+                            SectionHeader(title: "PALETTE CONFIGURATION", sub: "Tap to activate palette")
+                            Spacer()
+                            Button {
+                                showPaletteEditor = true
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            } label: {
+                                Text("+ STUDIO")
+                                    .font(RetroTheme.mono(10))
+                                    .foregroundStyle(RetroTheme.green)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(RetroTheme.green.opacity(0.1))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .stroke(RetroTheme.green.opacity(0.4), lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .padding(.trailing, 20)
+                        }
 
                         VStack(spacing: 10) {
-                            ForEach(Array(Palette.all.enumerated()), id: \.offset) { idx, palette in
+                            ForEach(Array(vm.allPalettes.enumerated()), id: \.element.id) { idx, palette in
                                 PaletteCard(
                                     palette: palette,
                                     isActive: vm.activePaletteIndex == idx
@@ -107,6 +149,9 @@ struct CameraSettingsView: View {
                         .font(RetroTheme.mono(11))
                         .foregroundStyle(RetroTheme.red)
                 }
+            }
+            .sheet(isPresented: $showPaletteEditor) {
+                CustomPaletteEditorView(vm: vm)
             }
         }
         .preferredColorScheme(.dark)

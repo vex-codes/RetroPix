@@ -1,11 +1,11 @@
 // MetalRenderer.swift
-// RetroPix — MTKViewDelegate driving the full render loop.
+// RetroPix — MTKViewDelegate driving the dynamic render loop.
 //
 // Each frame:
-//   1. Compute pass: camera texture → 256×128 dithered pixel texture (GPU-only)
-//   2. Render pass:  256×128 pixel texture → MTKView drawable (nearest-neighbor, letterboxed)
+//   1. Compute pass: camera texture → dithered pixel texture (GPU-only)
+//   2. Render pass:  pixel texture → MTKView drawable (nearest-neighbor, letterboxed)
 //
-// On capture: reads back the 256×128 texture from CPU-accessible memory.
+// On capture: reads back the active resolution texture from CPU-accessible memory.
 
 import MetalKit
 
@@ -19,8 +19,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private var computePipeline: MTLComputePipelineState?
     private var renderPipeline:  MTLRenderPipelineState?
 
-    /// 256×128 dithered output — shared storage so CPU can read it for capture.
+    /// Active resolution dithered output — shared storage so CPU can read it for capture.
     private var pixelTexture: MTLTexture?
+
+    // MARK: — Active dimensions and configuration
+
+    private(set) var outputWidth: Int = 256
+    private(set) var outputHeight: Int = 128
+    private var cropUV: SIMD4<Float> = SIMD4<Float>(0.0, 40.0 / 720.0, 1.0, 680.0 / 720.0)
+    private var orientation: UInt32 = 0
 
     // MARK: — Palette
 
@@ -29,14 +36,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Dither spread (ViewModel-controlled, default 0.75)
 
-    /// Set from CameraViewModel via .onChange — safe to write from MainActor,
-    /// read happens on the render loop (MTKView callback) which is also main-thread.
     var ditherSpread: Float = 0.75
 
     // MARK: — Viewport scale (letterbox)
 
-    /// Applied in the vertex shader to maintain the 2:1 aspect inside the drawable.
     private var viewportScale = SIMD2<Float>(1, 1)
+    private var lastDrawableSize: CGSize = .zero
 
     // MARK: — Camera feed
 
@@ -51,8 +56,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         self.cameraManager = cameraManager
         super.init()
         guard buildPipelines() else { return nil }
-        buildPixelTexture()
-        updatePalette(Palette.all[0])
+        buildPixelTexture(width: outputWidth, height: outputHeight)
+        updatePalette(Palette.def)
+    }
+
+    // MARK: — Configuration update
+
+    func updateConfig(width: Int, height: Int, cropUV: SIMD4<Float>, orientation: UInt32) {
+        if outputWidth != width || outputHeight != height {
+            outputWidth = width
+            outputHeight = height
+            buildPixelTexture(width: width, height: height)
+            updateViewportScale(lastDrawableSize)
+        }
+        self.cropUV = cropUV
+        self.orientation = orientation
     }
 
     // MARK: — Pipeline setup
@@ -78,9 +96,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         return computePipeline != nil && renderPipeline != nil
     }
 
-    private func buildPixelTexture() {
+    private func buildPixelTexture(width: Int, height: Int) {
+        guard width > 0, height > 0 else { return }
         let desc = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 256, height: 128, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
         desc.usage       = [.shaderWrite, .shaderRead]
         desc.storageMode = .shared   // CPU-readable for capture readback
         pixelTexture = device.makeTexture(descriptor: desc)
@@ -100,10 +119,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     // MARK: — MTKViewDelegate
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        // Compute letterbox scale: fit 2:1 content inside the drawable.
-        let screen:  Float = Float(size.width / size.height)
-        let content: Float = 2.0
+        lastDrawableSize = size
+        updateViewportScale(size)
+    }
+
+    private func updateViewportScale(_ size: CGSize) {
+        guard size.width > 0, size.height > 0, outputWidth > 0, outputHeight > 0 else { return }
+        let screen = Float(size.width / size.height)
+        let content = Float(outputWidth) / Float(outputHeight)
         if screen > content {
             viewportScale = SIMD2(content / screen, 1.0)
         } else {
@@ -132,10 +155,15 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             enc.setBytes(&paletteCount, length: MemoryLayout<UInt32>.size, index: 1)
             var spread = ditherSpread
             enc.setBytes(&spread, length: MemoryLayout<Float>.size, index: 2)
+            var size = SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight))
+            enc.setBytes(&size, length: MemoryLayout<SIMD2<UInt32>>.size, index: 3)
+            var crop = cropUV
+            enc.setBytes(&crop, length: MemoryLayout<SIMD4<Float>>.size, index: 4)
+            var orient = orientation
+            enc.setBytes(&orient, length: MemoryLayout<UInt32>.size, index: 5)
 
-            // 8×8 threadgroup, ceil-divide 256×128
             let tg    = MTLSize(width: 8, height: 8, depth: 1)
-            let tgrid = MTLSize(width: (256 + 7) / 8, height: (128 + 7) / 8, depth: 1)
+            let tgrid = MTLSize(width: (outputWidth + 7) / 8, height: (outputHeight + 7) / 8, depth: 1)
             enc.dispatchThreadgroups(tgrid, threadsPerThreadgroup: tg)
             enc.endEncoding()
         }
@@ -157,10 +185,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Capture readback
 
-    /// Reads the current 256×128 pixel texture into a UIImage synchronously.
-    /// Blocks briefly while the GPU finishes the in-flight frame — only call on capture.
+    /// Reads the current pixel texture into a UIImage synchronously.
     func capturePixelImage() -> UIImage? {
-        // Flush any in-flight work so the pixel texture is stable.
         let sem = DispatchSemaphore(value: 0)
         guard let flush = commandQueue.makeCommandBuffer() else { return nil }
         flush.addCompletedHandler { _ in sem.signal() }
@@ -168,7 +194,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         sem.wait()
 
         guard let texture = pixelTexture else { return nil }
-        let w = 256, h = 128
+        let w = outputWidth, h = outputHeight
+        guard w > 0, h > 0 else { return nil }
         let bytesPerRow = w * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * h)
         texture.getBytes(
@@ -178,7 +205,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                             size:   .init(width: w, height: h, depth: 1)),
             mipmapLevel: 0)
 
-        // Build a UIImage from the raw RGBA bytes.
         guard
             let ctx = CGContext(
                 data: &pixels,

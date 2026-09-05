@@ -1,10 +1,9 @@
 // ContentView.swift
-// RetroPix — Primary layout: Metal feed behind a retro OSD + control deck.
+// RetroPix — Primary layout: Metal feed behind an orientation-adaptive retro OSD + control deck.
 //
-// Structure (landscape):
-//   TopOSDBar  (40pt) — status pill, telemetry, menu button
-//   ZStack     (flex) — MetalView fullscreen + crosshair overlay
-//   BottomDeck (72pt) — palette cycler | EV stepper | dither toggle | shutter
+// Layout modes:
+//   Landscape: TopOSDBar (40pt) → Viewfinder → Horizontal BottomDeck (72pt)
+//   Portrait:  TopOSDBar (40pt) → Viewfinder → Multi-row Brutalist Control Deck
 
 import AVFoundation
 import Photos
@@ -20,29 +19,58 @@ struct ContentView: View {
     @State private var showSettings  = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // ── 1. Black base (visible while camera initialises) ──────────────
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            let isPortrait = geo.size.height > geo.size.width
+            let orientation: UInt32 = isPortrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
 
-            // ── 2. Metal viewfinder ───────────────────────────────────────────
-            if let renderer {
-                MetalView(renderer: renderer)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+            ZStack(alignment: .top) {
+                // ── 1. Black base ─────────────────────────────────────────────
+                Color.black.ignoresSafeArea()
+
+                // ── 2. Metal viewfinder ───────────────────────────────────────
+                if let renderer {
+                    MetalView(renderer: renderer)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
+
+                // ── 3. OSD rails ──────────────────────────────────────────────
+                if isPortrait {
+                    VStack(spacing: 0) {
+                        TopOSDBar(vm: vm, onMenu: { showSettings = true })
+
+                        CrosshairOverlay()
+
+                        Spacer()
+
+                        PortraitDeck(vm: vm, onShutter: triggerCapture)
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                } else {
+                    VStack(spacing: 0) {
+                        TopOSDBar(vm: vm, onMenu: { showSettings = true })
+
+                        CrosshairOverlay()
+
+                        Spacer()
+
+                        BottomDeck(vm: vm, onShutter: triggerCapture)
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
             }
-
-            // ── 3. OSD rails ─────────────────────────────────────────────────
-            VStack(spacing: 0) {
-                TopOSDBar(vm: vm, onMenu: { showSettings = true })
-
-                // Crosshair corners sit over the middle of the screen
-                CrosshairOverlay()
-
-                Spacer()
-
-                BottomDeck(vm: vm, onShutter: triggerCapture)
+            .onAppear {
+                vm.isPortrait = isPortrait
+                vm.orientation = orientation
+                updateRendererConfig()
             }
-            .ignoresSafeArea(edges: .bottom)
+            .onChange(of: geo.size) { _, newSize in
+                let portrait = newSize.height > newSize.width
+                let orient: UInt32 = portrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
+                vm.isPortrait = portrait
+                vm.orientation = orient
+                updateRendererConfig()
+            }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -54,6 +82,16 @@ struct ContentView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
         ) { _ in cameraManager.startSession() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
+        ) { _ in
+            let isPortrait = vm.isPortrait
+            let orient: UInt32 = isPortrait ? 1 : (UIDevice.current.orientation == .landscapeRight ? 2 : 0)
+            if vm.orientation != orient {
+                vm.orientation = orient
+                updateRendererConfig()
+            }
+        }
         // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
         .onChange(of: vm.activePaletteIndex) { _, _ in
             renderer?.updatePalette(vm.activePalette)
@@ -64,19 +102,31 @@ struct ContentView: View {
         .onChange(of: vm.evBias) { _, new in
             cameraManager.setExposureBias(new)
         }
+        .onChange(of: vm.activeRatio) { _, _ in
+            updateRendererConfig()
+        }
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(vm: vm)
         }
         .task { await CaptureService.requestPhotoPermissionIfNeeded() }
     }
 
-    // MARK: — Setup
+    // MARK: — Setup & Config
 
     private func setupRenderer() {
         guard renderer == nil,
               let device = MTLCreateSystemDefaultDevice() else { return }
         cameraManager.setup(device: device)
         renderer = MetalRenderer(device: device, cameraManager: cameraManager)
+        updateRendererConfig()
+    }
+
+    private func updateRendererConfig() {
+        let (w, h) = vm.outputSize
+        let crop = vm.activeRatio.cropUV
+        renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: vm.orientation)
+        renderer?.updatePalette(vm.activePalette)
+        renderer?.ditherSpread = vm.ditherIntensity
     }
 
     // MARK: — Capture
@@ -98,19 +148,22 @@ private struct TopOSDBar: View {
     let onMenu: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             OSDPill()
 
             Spacer()
 
-            // Centre telemetry
-            VStack(spacing: 1) {
-                Text("256×128  2:1  60FPS")
-                    .font(RetroTheme.mono(9))
-                    .foregroundStyle(RetroTheme.amber)
-                Text(String(format: "EV %+.1f  DITHER \(vm.ditherLabel)", vm.evBias))
-                    .font(RetroTheme.mono(8, weight: .regular))
-                    .foregroundStyle(RetroTheme.dimText)
+            // Aspect ratio quick switchers
+            HStack(spacing: 6) {
+                ForEach(AspectRatio.allCases) { ratio in
+                    RatioButton(
+                        label: ratio.displayLabel,
+                        isActive: vm.activeRatio == ratio
+                    ) {
+                        vm.activeRatio = ratio
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                }
             }
 
             Spacer()
@@ -120,11 +173,11 @@ private struct TopOSDBar: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onMenu()
             } label: {
-                Text("≡  MENU")
+                Text("≡ MENU")
                     .font(RetroTheme.mono(10))
                     .foregroundStyle(RetroTheme.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 3)
                             .fill(RetroTheme.green.opacity(0.07))
@@ -135,13 +188,13 @@ private struct TopOSDBar: View {
                     )
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
         .background(RetroTheme.bg.opacity(0.92))
     }
 }
 
-// MARK: — Bottom control deck
+// MARK: — Bottom control deck (Landscape)
 
 private struct BottomDeck: View {
     var vm: CameraViewModel
@@ -149,8 +202,11 @@ private struct BottomDeck: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            PaletteCycler(vm: vm)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                PaletteCycler(vm: vm)
+                RandButton { vm.generateRandomPalette() }
+            }
+            .frame(maxWidth: .infinity)
 
             DeckDivider()
 
@@ -164,7 +220,7 @@ private struct BottomDeck: View {
 
             DeckDivider()
 
-            // Shutter — rightmost for right-thumb grip
+            // Shutter
             VStack(spacing: 4) {
                 ShutterButton(action: onShutter)
                 Text("SHUTTER")
@@ -178,6 +234,62 @@ private struct BottomDeck: View {
     }
 }
 
+// MARK: — Portrait Deck (4 rows)
+
+private struct PortraitDeck: View {
+    var vm: CameraViewModel
+    let onShutter: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Row 1: Telemetry
+            HStack {
+                let (w, h) = vm.outputSize
+                Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)")
+                    .font(RetroTheme.mono(9))
+                    .foregroundStyle(RetroTheme.amber)
+                Spacer()
+                Text(String(format: "EV %+.1f  DITHER %@", vm.evBias, vm.ditherLabel))
+                    .font(RetroTheme.mono(8, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            Divider().background(RetroTheme.border)
+
+            // Row 2: Palette Cycler + RAND button
+            HStack(spacing: 10) {
+                PaletteCycler(vm: vm)
+                RandButton { vm.generateRandomPalette() }
+            }
+            .padding(.horizontal, 14)
+
+            // Row 3: Exposure + Dither
+            HStack(spacing: 0) {
+                EVStepper(vm: vm)
+                    .frame(maxWidth: .infinity)
+
+                DeckDivider()
+
+                DiamondToggle(vm: vm)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(height: 44)
+
+            // Row 4: Large centered Shutter
+            VStack(spacing: 4) {
+                ShutterButton(action: onShutter)
+                Text("SHUTTER")
+                    .font(RetroTheme.mono(7))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+            .padding(.bottom, 24)
+        }
+        .background(RetroTheme.bg.opacity(0.95))
+    }
+}
+
 // MARK: — Palette cycler  [<] NAME [>]
 
 private struct PaletteCycler: View {
@@ -185,7 +297,7 @@ private struct PaletteCycler: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ArrowBtn(symbol: "<") { vm.cyclePalette(forward: false) }
 
                 Text(vm.activePalette.name)
@@ -198,9 +310,8 @@ private struct PaletteCycler: View {
                 ArrowBtn(symbol: ">") { vm.cyclePalette(forward: true) }
             }
             ColorSwatchBar(palette: vm.activePalette, height: 6)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 6)
         }
-        .padding(.horizontal, 8)
     }
 }
 
@@ -260,7 +371,7 @@ private struct ArrowBtn: View {
             Text(symbol)
                 .font(RetroTheme.mono(14))
                 .foregroundStyle(RetroTheme.green)
-                .frame(width: 30, height: 44)  // 44pt touch target
+                .frame(width: 30, height: 44)
         }
         .buttonStyle(.plain)
     }

@@ -9,8 +9,27 @@ final class CameraViewModel {
     var activePaletteIndex: Int = 0
     var evBias: Float = 0.0          // clamped -2.0 … +2.0 in 0.5 steps
     var ditherIntensity: Float = 0.75 // 0 … 1.0; settable from deck toggle or settings slider
+    var activeRatio: AspectRatio = .ratio2_1
+    var isPortrait: Bool = false
+    var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
-    var activePalette: Palette { Palette.all[activePaletteIndex] }
+    var customPalettes: [Palette] = Palette.loadCustomPalettes()
+
+    var allPalettes: [Palette] {
+        Palette.all + customPalettes
+    }
+
+    var activePalette: Palette {
+        let list = allPalettes
+        guard !list.isEmpty else { return Palette.def }
+        let safeIdx = (activePaletteIndex % list.count + list.count) % list.count
+        return list[safeIdx]
+    }
+
+    /// Internal rendering resolution for active ratio and orientation
+    var outputSize: (w: Int, h: Int) {
+        activeRatio.outputSize(portrait: isPortrait)
+    }
 
     /// Human-readable label for the current dither value — snaps to nearest preset label.
     var ditherLabel: String {
@@ -25,12 +44,53 @@ final class CameraViewModel {
     // MARK: — Actions (all include selection haptic)
 
     func cyclePalette(forward: Bool) {
-        activePaletteIndex = (activePaletteIndex + (forward ? 1 : Palette.all.count - 1)) % Palette.all.count
+        let count = allPalettes.count
+        guard count > 0 else { return }
+        activePaletteIndex = (activePaletteIndex + (forward ? 1 : count - 1)) % count
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    func generateRandomPalette() {
+        let pal = HarmonicPaletteGenerator.generate(count: Int.random(in: 5...8))
+        customPalettes.append(pal)
+        Palette.saveCustomPalettes(customPalettes)
+        activePaletteIndex = allPalettes.count - 1
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func addCustomPalette(_ palette: Palette) {
+        customPalettes.append(palette)
+        Palette.saveCustomPalettes(customPalettes)
+        activePaletteIndex = allPalettes.count - 1
+    }
+
+    func deleteCustomPalette(id: String) {
+        customPalettes.removeAll { $0.id == id }
+        Palette.saveCustomPalettes(customPalettes)
+        if activePaletteIndex >= allPalettes.count {
+            activePaletteIndex = max(0, allPalettes.count - 1)
+        }
+    }
+
+    func reloadCustomPalettes() {
+        customPalettes = Palette.loadCustomPalettes()
+        if activePaletteIndex >= allPalettes.count {
+            activePaletteIndex = max(0, allPalettes.count - 1)
+        }
     }
 
     func stepEV(up: Bool) {
         evBias = max(-2.0, min(2.0, evBias + (up ? 0.5 : -0.5)))
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    func cycleRatio() {
+        let all = AspectRatio.allCases
+        if let idx = all.firstIndex(of: activeRatio) {
+            activeRatio = all[(idx + 1) % all.count]
+        } else {
+            activeRatio = .ratio2_1
+        }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
