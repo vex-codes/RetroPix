@@ -174,7 +174,11 @@ struct CustomPaletteEditorView: View {
     private func sortLuminance() {
         let retro = colors.map { retroColor(from: $0) }
         let sorted = retro.sorted { $0.luminance < $1.luminance }
-        colors = sorted.map { Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b)) }
+        let newColors = sorted.map { Color(red: Double($0.r), green: Double($0.g), blue: Double($0.b)) }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            colors = newColors
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func savePalette() {
