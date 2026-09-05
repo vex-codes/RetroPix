@@ -212,13 +212,12 @@ private struct PortraitDeck: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            // Row 1: Telemetry (rotates)
+            // Row 1: Telemetry (stays horizontal)
             HStack {
                 let (w, h) = vm.outputSize
                 Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)")
                     .font(RetroTheme.mono(9))
                     .foregroundStyle(RetroTheme.amber)
-                    .rotationEffect(.degrees(rotation))
 
                 Spacer()
 
@@ -226,7 +225,6 @@ private struct PortraitDeck: View {
                 Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
                     .font(RetroTheme.mono(8, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
-                    .rotationEffect(.degrees(rotation))
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
