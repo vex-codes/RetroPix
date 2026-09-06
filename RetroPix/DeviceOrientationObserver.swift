@@ -34,24 +34,25 @@ final class DeviceOrientationObserver {
             guard let self, let data else { return }
             let x = data.acceleration.x
             let y = data.acceleration.y
+            let z = data.acceleration.z
+
+            // Ignore orientation changes when device is laying flat
+            if abs(z) > 0.80 { return }
 
             let newOrientation: DeviceOrientation
-            if abs(x) > abs(y) {
-                if x < -0.45 {
+            // Decisive threshold (>0.72g along X and >1.6x Y) ensures orientation only flips in full landscape
+            if abs(x) > 0.72 && abs(x) > 1.6 * abs(y) {
+                if x < -0.72 {
                     newOrientation = .landscapeLeft   // Rotated 90° CCW (charging port on right)
-                } else if x > 0.45 {
+                } else {
                     newOrientation = .landscapeRight  // Rotated 90° CW (charging port on left)
-                } else {
-                    return
                 }
+            } else if y < -0.50 && abs(y) > 1.2 * abs(x) {
+                newOrientation = .portrait        // Normal upright
+            } else if y > 0.70 && abs(y) > 1.6 * abs(x) {
+                newOrientation = .portraitUpsideDown
             } else {
-                if y < -0.45 {
-                    newOrientation = .portrait        // Normal upright
-                } else if y > 0.45 {
-                    newOrientation = .portraitUpsideDown
-                } else {
-                    return
-                }
+                return  // Deadband zone: maintain current orientation
             }
 
             if newOrientation != self.orientation {
