@@ -148,7 +148,7 @@ final class CameraViewModel {
     }
 
     func generateRandomPalette() {
-        let pal = HarmonicPaletteGenerator.generate(count: Int.random(in: 5...8))
+        let pal = HarmonicPaletteGenerator.generate(existingPalettes: palettes, count: Int.random(in: 6...8))
         palettes.append(pal)
         Palette.savePalettes(palettes)
         activePaletteIndex = palettes.count - 1

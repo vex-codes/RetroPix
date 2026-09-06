@@ -17,13 +17,46 @@ enum HarmonicPaletteGenerator {
         case arcticFrost   = "ARCTIC"    // twilight navy -> cobalt -> glacial white -> fiery amber accent
     }
 
-    private static var lastArchetype: Archetype?
+    private static var deck: [Archetype] = []
 
-    static func generate(count: Int = 8) -> Palette {
+    static func generate(existingPalettes: [Palette] = [], count: Int = 8) -> Palette {
+        for _ in 0..<12 {
+            let candidate = generateCandidate(count: count)
+            if !isTooSimilar(candidate.colors, to: existingPalettes) {
+                return candidate
+            }
+        }
+        return generateCandidate(count: count)
+    }
+
+    private static func isTooSimilar(_ candidate: [RetroColor], to existing: [Palette]) -> Bool {
+        for pal in existing {
+            let other = pal.colors
+            guard !other.isEmpty else { continue }
+            let compareCount = min(candidate.count, other.count)
+            var totalDiff: Float = 0
+            for i in 0..<compareCount {
+                let c1 = candidate[i]
+                let c2 = other[i]
+                let dr = c1.r - c2.r
+                let dg = c1.g - c2.g
+                let db = c1.b - c2.b
+                totalDiff += sqrt(dr * dr + dg * dg + db * db)
+            }
+            let avgDiff = totalDiff / Float(compareCount)
+            if avgDiff < 0.22 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func generateCandidate(count: Int) -> Palette {
         let n = max(5, min(8, count))
-        let available = Archetype.allCases.filter { $0 != lastArchetype }
-        let archetype = available.randomElement() ?? .midnightSynth
-        lastArchetype = archetype
+        if deck.isEmpty {
+            deck = Archetype.allCases.shuffled()
+        }
+        let archetype = deck.removeFirst()
 
         var baseColors: [RetroColor] = []
 
