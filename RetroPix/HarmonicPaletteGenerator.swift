@@ -5,26 +5,33 @@ import Foundation
 
 enum HarmonicPaletteGenerator {
 
-    enum Style: CaseIterable {
-        case warmToCool    // 7MDNIGHT style: cool shadows -> warm magenta -> gold highlight -> cyan accent
-        case warmAnalogous // 8BRKFST style: espresso -> terracotta -> amber -> sage accent
-        case neoTokyo      // deep navy -> magenta -> amber -> electric cyan
-        case vaporwave     // indigo -> violet -> peach -> mint
-        case retroEarth    // dark olive -> moss -> khaki -> brick red accent
+    enum Archetype: String, CaseIterable {
+        case midnightSynth = "MIDNIGHT"  // 7MDNIGHT style: violet shadow -> coral/gold -> cyan accent
+        case warmCafe      = "CAFE"      // 8BRKFST style: espresso -> terracotta -> amber -> sage accent
+        case deepOcean     = "OCEAN"     // abyssal navy -> teal -> seafoam -> sunset coral accent
+        case emeraldGrove  = "EMERALD"   // deep pine -> moss -> chartreuse -> copper accent
+        case solarFlare    = "SOLAR"     // burgundy -> vermillion -> sulfur yellow -> deep violet accent
+        case cyberLime     = "CYBER"     // pitch onyx -> graphite -> acid lime -> hot magenta accent
+        case amethystDusk  = "AMETHYST"  // velvet plum -> royal violet -> periwinkle -> goldenrod accent
+        case desertOasis   = "OASIS"     // dark umber -> dune sand -> terracotta -> electric turquoise accent
+        case arcticFrost   = "ARCTIC"    // twilight navy -> cobalt -> glacial white -> fiery amber accent
     }
+
+    private static var lastArchetype: Archetype?
 
     static func generate(count: Int = 8) -> Palette {
         let n = max(5, min(8, count))
-        let style = Style.allCases.randomElement() ?? .warmToCool
+        let available = Archetype.allCases.filter { $0 != lastArchetype }
+        let archetype = available.randomElement() ?? .midnightSynth
+        lastArchetype = archetype
 
         var baseColors: [RetroColor] = []
 
-        switch style {
-        case .warmToCool:
-            // 7MDNIGHT pattern: Cool dark shadow -> warm vibrant midtone -> bright highlight + 1 cool accent
-            let shadowHue = Float.random(in: 250...285)
-            let highlightHue = Float.random(in: 40...60)
-            let accentHue = Float.random(in: 175...200)
+        switch archetype {
+        case .midnightSynth:
+            let shadowHue = Float.random(in: 255...285)
+            let highlightHue = Float.random(in: 45...65)
+            let accentHue = Float.random(in: 180...195)
 
             for i in 0..<(n - 1) {
                 let t = Float(i) / Float(n - 2)
@@ -33,64 +40,111 @@ enum HarmonicPaletteGenerator {
                 let sat = sin(t * .pi) * 0.50 + 0.45
                 baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
             }
-            baseColors.append(hslToRgb(h: accentHue, s: 0.80, l: 0.58))
+            baseColors.append(hslToRgb(h: accentHue, s: 0.85, l: 0.55))
 
-        case .warmAnalogous:
-            // 8BRKFST pattern: Rich coffee dark -> warm terracotta -> amber -> cream + 1 sage/earth accent
-            let baseHue = Float.random(in: 15...35)
+        case .warmCafe:
+            let baseHue = Float.random(in: 16...32)
             let accentHue = normalizeHue(baseHue + 140)
 
             for i in 0..<(n - 1) {
                 let t = Float(i) / Float(n - 2)
-                let hue = normalizeHue(baseHue + t * 25.0)
+                let hue = normalizeHue(baseHue + t * 24.0)
                 let lum = 0.06 + 0.88 * pow(t, 1.20)
                 let sat = sin(t * .pi) * 0.45 + 0.40
                 baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
             }
             baseColors.append(hslToRgb(h: accentHue, s: 0.35, l: 0.42))
 
-        case .neoTokyo:
-            let darkHue: Float = 245
-            let brightHue: Float = 330
-            let accentHue: Float = 180
-            for i in 0..<(n - 1) {
-                let t = Float(i) / Float(n - 2)
-                let hue = (t < 0.45) ? darkHue : brightHue
-                let lum = 0.04 + 0.92 * pow(t, 1.2)
-                let sat = 0.50 + 0.45 * sin(t * .pi)
-                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
-            }
-            baseColors.append(hslToRgb(h: accentHue, s: 0.90, l: 0.60))
+        case .deepOcean:
+            let shadowHue: Float = 225
+            let highlightHue: Float = 155
+            let accentHue: Float = 15
 
-        case .vaporwave:
-            let startHue = Float.random(in: 270...310)
-            let accentHue = Float.random(in: 160...190)
             for i in 0..<(n - 1) {
                 let t = Float(i) / Float(n - 2)
-                let hue = normalizeHue(startHue + t * 45)
-                let lum = 0.08 + 0.86 * t
-                let sat = 0.45 + 0.45 * sin(t * .pi)
+                let hue = normalizeHue(shadowHue - t * (shadowHue - highlightHue))
+                let lum = 0.04 + 0.90 * pow(t, 1.30)
+                let sat = sin(t * .pi) * 0.50 + 0.40
                 baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
             }
-            baseColors.append(hslToRgb(h: accentHue, s: 0.70, l: 0.65))
+            baseColors.append(hslToRgb(h: accentHue, s: 0.85, l: 0.58))
 
-        case .retroEarth:
-            let baseHue = Float.random(in: 60...90)
-            let accentHue = Float.random(in: 0...20)
+        case .emeraldGrove:
+            let shadowHue: Float = 145
+            let highlightHue: Float = 75
+            let accentHue: Float = 10
+
             for i in 0..<(n - 1) {
                 let t = Float(i) / Float(n - 2)
-                let hue = normalizeHue(baseHue + (t > 0.6 ? 20 : 0))
-                let lum = 0.06 + 0.88 * t
-                let sat = 0.30 + 0.35 * sin(t * .pi)
+                let hue = normalizeHue(shadowHue - t * (shadowHue - highlightHue))
+                let lum = 0.05 + 0.88 * pow(t, 1.25)
+                let sat = sin(t * .pi) * 0.45 + 0.40
                 baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
             }
-            baseColors.append(hslToRgb(h: accentHue, s: 0.65, l: 0.45))
+            baseColors.append(hslToRgb(h: accentHue, s: 0.70, l: 0.48))
+
+        case .solarFlare:
+            let shadowHue: Float = 345
+            let accentHue: Float = 275
+
+            for i in 0..<(n - 1) {
+                let t = Float(i) / Float(n - 2)
+                let hue = normalizeHue(shadowHue + t * 67.0)
+                let lum = 0.05 + 0.90 * pow(t, 1.20)
+                let sat = sin(t * .pi) * 0.55 + 0.45
+                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
+            }
+            baseColors.append(hslToRgb(h: accentHue, s: 0.80, l: 0.45))
+
+        case .cyberLime:
+            for i in 0..<(n - 1) {
+                let t = Float(i) / Float(n - 2)
+                let hue: Float = (t < 0.4) ? 210 : 80
+                let lum = 0.04 + 0.92 * pow(t, 1.25)
+                let sat = (t < 0.4) ? 0.25 : (sin(t * .pi) * 0.55 + 0.45)
+                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
+            }
+            baseColors.append(hslToRgb(h: 320, s: 0.95, l: 0.55))
+
+        case .amethystDusk:
+            let shadowHue: Float = 295
+            let highlightHue: Float = 240
+            let accentHue: Float = 48
+
+            for i in 0..<(n - 1) {
+                let t = Float(i) / Float(n - 2)
+                let hue = normalizeHue(shadowHue - t * (shadowHue - highlightHue))
+                let lum = 0.05 + 0.88 * pow(t, 1.25)
+                let sat = sin(t * .pi) * 0.50 + 0.40
+                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
+            }
+            baseColors.append(hslToRgb(h: accentHue, s: 0.85, l: 0.60))
+
+        case .desertOasis:
+            for i in 0..<(n - 1) {
+                let t = Float(i) / Float(n - 2)
+                let hue: Float = 30 + t * 20
+                let lum = 0.06 + 0.88 * pow(t, 1.20)
+                let sat = sin(t * .pi) * 0.40 + 0.35
+                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
+            }
+            baseColors.append(hslToRgb(h: 185, s: 0.85, l: 0.52))
+
+        case .arcticFrost:
+            for i in 0..<(n - 1) {
+                let t = Float(i) / Float(n - 2)
+                let hue: Float = 235 - t * 40
+                let lum = 0.05 + 0.92 * pow(t, 1.25)
+                let sat = sin(t * .pi) * 0.45 + 0.40
+                baseColors.append(hslToRgb(h: hue, s: sat, l: lum))
+            }
+            baseColors.append(hslToRgb(h: 35, s: 0.90, l: 0.55))
         }
 
         // BT.709 luminance sort ensures darkest to lightest gradation
         let sorted = baseColors.sorted { $0.luminance < $1.luminance }
         let id = "gen_\(UUID().uuidString.prefix(8))"
-        let name = "GEN_\(Int.random(in: 100...999))"
+        let name = "\(archetype.rawValue)_\(Int.random(in: 10...99))"
         return Palette(id: id, name: name, colors: sorted)
     }
 
