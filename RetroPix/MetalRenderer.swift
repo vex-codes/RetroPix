@@ -154,20 +154,25 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
         desc.usage       = [.shaderWrite, .shaderRead]
-        desc.storageMode = .private   // GPU VRAM only: eliminates CPU/GPU bus snooping
+        desc.storageMode = .shared   // CPU-readable for capture readback
         pixelTexture = device.makeTexture(descriptor: desc)
     }
 
     // MARK: — Palette hot-swap
 
     func updatePalette(_ palette: Palette) {
-        var gpu = palette.gpuColors
+        let gpu = palette.gpuColors
         paletteCount = UInt32(palette.count)
-        if let paletteBuffer {
-            withUnsafeBytes(of: &gpu) { raw in
-                if let base = raw.baseAddress {
-                    paletteBuffer.contents().copyMemory(from: base, byteCount: min(raw.count, 8 * MemoryLayout<SIMD4<Float>>.stride))
-                }
+        if paletteBuffer == nil {
+            paletteBuffer = device.makeBuffer(
+                length: 8 * MemoryLayout<SIMD4<Float>>.stride,
+                options: .storageModeShared
+            )
+        }
+        guard let paletteBuffer else { return }
+        gpu.withUnsafeBytes { raw in
+            if let base = raw.baseAddress {
+                paletteBuffer.contents().copyMemory(from: base, byteCount: min(raw.count, 8 * MemoryLayout<SIMD4<Float>>.stride))
             }
         }
     }
@@ -250,41 +255,22 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     /// Reads the current pixel texture into a UIImage synchronously with safe row byte alignment and immutable CFData.
     func capturePixelImage() -> UIImage? {
+        let sem = DispatchSemaphore(value: 0)
+        guard let flush = commandQueue.makeCommandBuffer() else { return nil }
+        flush.addCompletedHandler { _ in sem.signal() }
+        flush.commit()
+        sem.wait()
+
         guard let texture = pixelTexture else { return nil }
         let w = outputWidth, h = outputHeight
         guard w > 0, h > 0 else { return nil }
-
-        let stagingDesc = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: w, height: h, mipmapped: false)
-        stagingDesc.usage = [.shaderRead]
-        stagingDesc.storageMode = .shared
-        guard
-            let stagingTexture = device.makeTexture(descriptor: stagingDesc),
-            let blitCmd = commandQueue.makeCommandBuffer(),
-            let blitEnc = blitCmd.makeBlitCommandEncoder()
-        else { return nil }
-
-        blitEnc.copy(
-            from: texture,
-            sourceSlice: 0,
-            sourceLevel: 0,
-            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-            sourceSize: MTLSize(width: w, height: h, depth: 1),
-            to: stagingTexture,
-            destinationSlice: 0,
-            destinationLevel: 0,
-            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
-        )
-        blitEnc.endEncoding()
-        blitCmd.commit()
-        blitCmd.waitUntilCompleted()
 
         let bytesPerRow = ((w * 4 + 63) / 64) * 64
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * h)
 
         pixels.withUnsafeMutableBytes { rawPtr in
             guard let baseAddress = rawPtr.baseAddress else { return }
-            stagingTexture.getBytes(
+            texture.getBytes(
                 baseAddress,
                 bytesPerRow: bytesPerRow,
                 from: MTLRegion(origin: .init(x: 0, y: 0, z: 0),

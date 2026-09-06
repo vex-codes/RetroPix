@@ -156,14 +156,8 @@ struct ContentView: View {
         guard renderer == nil,
               let device = MTLCreateSystemDefaultDevice() else { return }
         cameraManager.setup(device: device)
-        DispatchQueue.global(qos: .userInitiated).async { [weak cameraManager] in
-            guard let cameraManager,
-                  let metalRenderer = MetalRenderer(device: device, cameraManager: cameraManager) else { return }
-            DispatchQueue.main.async {
-                self.renderer = metalRenderer
-                self.updateRendererConfig()
-            }
-        }
+        renderer = MetalRenderer(device: device, cameraManager: cameraManager)
+        updateRendererConfig()
     }
 
     private func updateRendererConfig() {
