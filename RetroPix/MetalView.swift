@@ -13,6 +13,7 @@ struct MetalView: UIViewRepresentable {
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView(frame: .zero, device: renderer.device)
         view.delegate                    = renderer
+        view.contentScaleFactor          = 1.0   // 1x scale: avoids 9x Retina fillrate overdraw for retro pixels
         view.preferredFramesPerSecond    = 30
         view.isPaused                    = isPaused
         view.enableSetNeedsDisplay       = false

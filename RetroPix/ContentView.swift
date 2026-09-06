@@ -92,6 +92,9 @@ struct ContentView: View {
             DispatchQueue.global(qos: .utility).async {
                 _ = ShutterAudioService.shared
             }
+            DispatchQueue.main.async {
+                UIImpactFeedbackGenerator(style: .light).prepare()
+            }
         }
         .onDisappear {
             cameraManager.stopSession()
@@ -153,8 +156,14 @@ struct ContentView: View {
         guard renderer == nil,
               let device = MTLCreateSystemDefaultDevice() else { return }
         cameraManager.setup(device: device)
-        renderer = MetalRenderer(device: device, cameraManager: cameraManager)
-        updateRendererConfig()
+        DispatchQueue.global(qos: .userInitiated).async { [weak cameraManager] in
+            guard let cameraManager,
+                  let metalRenderer = MetalRenderer(device: device, cameraManager: cameraManager) else { return }
+            DispatchQueue.main.async {
+                self.renderer = metalRenderer
+                self.updateRendererConfig()
+            }
+        }
     }
 
     private func updateRendererConfig() {
