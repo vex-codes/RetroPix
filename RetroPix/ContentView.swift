@@ -121,11 +121,15 @@ struct ContentView: View {
                 cameraManager.stopSession()
                 orientationObserver.stop()
             } else if scenePhase == .active {
+                renderer?.updatePalette(vm.activePalette)
                 cameraManager.startSession()
                 orientationObserver.start()
             }
         }
         // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
+        .onChange(of: vm.activePalette) { _, newPalette in
+            renderer?.updatePalette(newPalette)
+        }
         .onChange(of: vm.activePaletteIndex) { _, _ in
             renderer?.updatePalette(vm.activePalette)
         }
