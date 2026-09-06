@@ -41,9 +41,42 @@ enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
 
 @Observable
 final class CameraViewModel {
-    var activePaletteIndex: Int = 0
+    var activePaletteIndex: Int = {
+        let list = Palette.loadPalettes()
+        if let savedId = UserDefaults.standard.string(forKey: "activePaletteId"),
+           let idx = list.firstIndex(where: { $0.id == savedId }) {
+            return idx
+        }
+        if let savedIdx = UserDefaults.standard.object(forKey: "activePaletteIndex") as? Int,
+           savedIdx >= 0, savedIdx < list.count {
+            return savedIdx
+        }
+        if let midnightIdx = list.firstIndex(where: { $0.id == "7mdnight" || $0.name == "7MDNIGHT" }) {
+            return midnightIdx
+        }
+        return 0
+    }() {
+        didSet {
+            UserDefaults.standard.set(activePaletteIndex, forKey: "activePaletteIndex")
+            if activePaletteIndex >= 0 && activePaletteIndex < palettes.count {
+                UserDefaults.standard.set(palettes[activePaletteIndex].id, forKey: "activePaletteId")
+            }
+        }
+    }
+
     var evBias: Float = 0.0          // clamped -2.0 … +2.0 in 0.5 steps
-    var ditherIntensity: Float = 0.75 // 0 … 1.0; settable from deck toggle or settings slider
+
+    var ditherIntensity: Float = {
+        if let saved = UserDefaults.standard.object(forKey: "ditherIntensity") as? Float {
+            return saved
+        }
+        return 0.50
+    }() {
+        didSet {
+            UserDefaults.standard.set(ditherIntensity, forKey: "ditherIntensity")
+        }
+    }
+
     var ditherAlgorithm: DitherAlgorithm = {
         if let saved = UserDefaults.standard.string(forKey: "ditherAlgorithm"),
            let alg = DitherAlgorithm(rawValue: saved) {
@@ -55,6 +88,7 @@ final class CameraViewModel {
             UserDefaults.standard.set(ditherAlgorithm.rawValue, forKey: "ditherAlgorithm")
         }
     }
+
     var activeRatio: AspectRatio = {
         if let saved = UserDefaults.standard.string(forKey: "activeRatio"),
            let ratio = AspectRatio(rawValue: saved) {
@@ -66,6 +100,7 @@ final class CameraViewModel {
             UserDefaults.standard.set(activeRatio.rawValue, forKey: "activeRatio")
         }
     }
+
     var isPortrait: Bool = false
     var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
@@ -74,7 +109,8 @@ final class CameraViewModel {
     var baseZoomFactor: CGFloat = 1.0
 
     var palettes: [Palette] = Palette.loadPalettes()
-    var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? true {
+
+    var isDarkMode: Bool = UserDefaults.standard.object(forKey: "isDarkMode") as? Bool ?? false {
         didSet {
             UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode")
         }
@@ -92,7 +128,7 @@ final class CameraViewModel {
         }
     }
 
-    var frameBorderEnabled: Bool = UserDefaults.standard.object(forKey: "frameBorderEnabled") as? Bool ?? false {
+    var frameBorderEnabled: Bool = UserDefaults.standard.object(forKey: "frameBorderEnabled") as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(frameBorderEnabled, forKey: "frameBorderEnabled")
         }
@@ -194,7 +230,11 @@ final class CameraViewModel {
 
     func resetPalettesToDefault() {
         palettes = Palette.resetToDefaults()
-        activePaletteIndex = 0
+        if let midnightIdx = palettes.firstIndex(where: { $0.id == "7mdnight" || $0.name == "7MDNIGHT" }) {
+            activePaletteIndex = midnightIdx
+        } else {
+            activePaletteIndex = 0
+        }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 

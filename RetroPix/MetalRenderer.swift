@@ -54,7 +54,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Dither engine settings
 
-    var ditherSpread: Float = 0.75
+    var ditherSpread: Float = 0.50
     var ditherAlgorithm: UInt32 = 0
 
     // MARK: — Viewport scale (letterbox)
@@ -80,7 +80,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             options: .storageModeShared
         )
         buildPixelTexture(width: outputWidth, height: outputHeight)
-        updatePalette(Palette.def)
+        updatePalette(Palette.midnight)
 
         NotificationCenter.default.addObserver(
             self,
