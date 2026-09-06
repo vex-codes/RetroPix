@@ -20,11 +20,41 @@ enum DateStampMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
+    case bayer8 = "BAYER 8×8"
+    case blueNoise = "BLUE NOISE"
+    case atkinson = "ATKINSON '84"
+    case floydSteinberg = "F-STEINBERG"
+
+    var id: String { rawValue }
+    var displayLabel: String { rawValue }
+
+    var rawIndex: UInt32 {
+        switch self {
+        case .bayer8: return 0
+        case .blueNoise: return 1
+        case .atkinson: return 2
+        case .floydSteinberg: return 3
+        }
+    }
+}
+
 @Observable
 final class CameraViewModel {
     var activePaletteIndex: Int = 0
     var evBias: Float = 0.0          // clamped -2.0 … +2.0 in 0.5 steps
     var ditherIntensity: Float = 0.75 // 0 … 1.0; settable from deck toggle or settings slider
+    var ditherAlgorithm: DitherAlgorithm = {
+        if let saved = UserDefaults.standard.string(forKey: "ditherAlgorithm"),
+           let alg = DitherAlgorithm(rawValue: saved) {
+            return alg
+        }
+        return .bayer8
+    }() {
+        didSet {
+            UserDefaults.standard.set(ditherAlgorithm.rawValue, forKey: "ditherAlgorithm")
+        }
+    }
     var activeRatio: AspectRatio = {
         if let saved = UserDefaults.standard.string(forKey: "activeRatio"),
            let ratio = AspectRatio(rawValue: saved) {
@@ -87,13 +117,13 @@ final class CameraViewModel {
         activeRatio.outputSize
     }
 
-    /// Human-readable label for the current dither value — snaps to nearest preset label.
+    /// Real-time human-readable label matching exact percentage or OFF.
     var ditherLabel: String {
-        switch ditherIntensity {
-        case 0:        return "OFF"
-        case ..<0.6:   return "50%"
-        case ..<0.88:  return "75%"
-        default:       return "100%"
+        let percent = Int(round(ditherIntensity * 100))
+        if percent <= 0 {
+            return "OFF"
+        } else {
+            return "\(percent)%"
         }
     }
 
@@ -186,11 +216,14 @@ final class CameraViewModel {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
-    /// Cycles dither through OFF → 50% → 75% → 100% snap points.
+    /// Cycles dither through OFF (0%) → 50% → 75% → 100% snap points.
     func cycleDither() {
-        let steps: [Float] = [0, 0.5, 0.75, 1.0]
-        let nearestIdx = steps.indices.min(by: { abs(steps[$0] - ditherIntensity) < abs(steps[$1] - ditherIntensity) }) ?? 2
-        ditherIntensity = steps[(nearestIdx + 1) % steps.count]
+        let steps: [Float] = [0.0, 0.5, 0.75, 1.0]
+        if let next = steps.first(where: { $0 > ditherIntensity + 0.02 }) {
+            ditherIntensity = next
+        } else {
+            ditherIntensity = 0.0
+        }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 

@@ -3,17 +3,23 @@
 //
 // Each frame:
 //   1. Compute pass: camera texture → dithered pixel texture (GPU-only)
+//      Supports Bayer 8x8, Blue Noise 16x16, Atkinson (Mac '84), and Floyd-Steinberg.
 //   2. Render pass:  pixel texture → MTKView drawable (nearest-neighbor, letterboxed)
 //
-// On capture: reads back the active resolution texture from CPU-accessible memory.
+// On capture: reads back the active resolution texture with 64-byte row alignment and immutable CFData.
 
 import MetalKit
+import UIKit
 
 private struct ShaderUniforms {
     var cropUV: SIMD4<Float>
     var outputSize: SIMD2<UInt32>
     var ditherSpread: Float
     var paletteCount: UInt32
+    var ditherAlgorithm: UInt32
+    var _pad0: UInt32 = 0
+    var _pad1: UInt32 = 0
+    var _pad2: UInt32 = 0
 }
 
 final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
@@ -23,8 +29,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
 
-    private var computePipeline: MTLComputePipelineState?
-    private var renderPipeline:  MTLRenderPipelineState?
+    private var computePipeline:        MTLComputePipelineState?
+    private var errorDiffusionPipeline: MTLComputePipelineState?
+    private var renderPipeline:         MTLRenderPipelineState?
 
     /// Active resolution dithered output — shared storage so CPU can read it for capture.
     private var pixelTexture: MTLTexture?
@@ -36,14 +43,19 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private var cropUV: SIMD4<Float> = SIMD4<Float>(0.0, 40.0 / 720.0, 1.0, 680.0 / 720.0)
     private var orientation: UInt32 = 0
 
+    // MARK: — Lifecycle & Suspension
+
+    var isSuspended: Bool = false
+
     // MARK: — Palette
 
     private var paletteBuffer: MTLBuffer?
     private var paletteCount: UInt32 = 0
 
-    // MARK: — Dither spread (ViewModel-controlled, default 0.75)
+    // MARK: — Dither engine settings
 
     var ditherSpread: Float = 0.75
+    var ditherAlgorithm: UInt32 = 0
 
     // MARK: — Viewport scale (letterbox)
 
@@ -54,7 +66,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     private weak var cameraManager: CameraManager?
 
-    // MARK: — Init
+    // MARK: — Init & Deinit
 
     init?(device: MTLDevice, cameraManager: CameraManager) {
         self.device = device
@@ -65,6 +77,31 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         guard buildPipelines() else { return nil }
         buildPixelTexture(width: outputWidth, height: outputHeight)
         updatePalette(Palette.def)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func handleBackground() {
+        isSuspended = true
+    }
+
+    @objc private func handleForeground() {
+        isSuspended = false
     }
 
     // MARK: — Configuration update
@@ -85,9 +122,14 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     private func buildPipelines() -> Bool {
         guard let library = device.makeDefaultLibrary() else { return false }
 
-        // Compute: pixelKernel
+        // Compute: parallel spatial kernel (Bayer & Blue Noise)
         if let fn = library.makeFunction(name: "pixelKernel") {
             computePipeline = try? device.makeComputePipelineState(function: fn)
+        }
+
+        // Compute: scanline error diffusion kernel (Atkinson & Floyd-Steinberg)
+        if let fnErr = library.makeFunction(name: "errorDiffusionKernel") {
+            errorDiffusionPipeline = try? device.makeComputePipelineState(function: fnErr)
         }
 
         // Render: blitVertex + blitFragment
@@ -143,6 +185,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     func draw(in view: MTKView) {
         guard
+            !isSuspended,
             let commandBuffer  = commandQueue.makeCommandBuffer(),
             let drawable       = view.currentDrawable,
             let rpd            = view.currentRenderPassDescriptor,
@@ -155,7 +198,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
         // ── 1. Compute pass ──────────────────────────────────────────────────
         if let enc = commandBuffer.makeComputeCommandEncoder() {
-            enc.setComputePipelineState(computePipeline)
+            let useErrorDiffusion = (ditherAlgorithm >= 2 && errorDiffusionPipeline != nil)
+            let pipeline = useErrorDiffusion ? errorDiffusionPipeline! : computePipeline
+            enc.setComputePipelineState(pipeline)
             enc.setTexture(cameraTexture, index: 0)
             enc.setTexture(pixelTexture,  index: 1)
             enc.setBuffer(paletteBuffer, offset: 0, index: 0)
@@ -163,13 +208,19 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                 cropUV: cropUV,
                 outputSize: SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight)),
                 ditherSpread: ditherSpread,
-                paletteCount: paletteCount
+                paletteCount: paletteCount,
+                ditherAlgorithm: ditherAlgorithm
             )
             enc.setBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 1)
 
-            let tg    = MTLSize(width: 8, height: 8, depth: 1)
-            let tgrid = MTLSize(width: (outputWidth + 7) / 8, height: (outputHeight + 7) / 8, depth: 1)
-            enc.dispatchThreadgroups(tgrid, threadsPerThreadgroup: tg)
+            if useErrorDiffusion {
+                let tg = MTLSize(width: 1, height: 1, depth: 1)
+                enc.dispatchThreadgroups(tg, threadsPerThreadgroup: tg)
+            } else {
+                let tg    = MTLSize(width: 8, height: 8, depth: 1)
+                let tgrid = MTLSize(width: (outputWidth + 7) / 8, height: (outputHeight + 7) / 8, depth: 1)
+                enc.dispatchThreadgroups(tgrid, threadsPerThreadgroup: tg)
+            }
             enc.endEncoding()
         }
 
@@ -190,7 +241,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Capture readback
 
-    /// Reads the current pixel texture into a UIImage synchronously.
+    /// Reads the current pixel texture into a UIImage synchronously with safe row byte alignment and immutable CFData.
     func capturePixelImage() -> UIImage? {
         let sem = DispatchSemaphore(value: 0)
         guard let flush = commandQueue.makeCommandBuffer() else { return nil }
@@ -201,24 +252,36 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         guard let texture = pixelTexture else { return nil }
         let w = outputWidth, h = outputHeight
         guard w > 0, h > 0 else { return nil }
-        let bytesPerRow = w * 4
+
+        let bytesPerRow = ((w * 4 + 63) / 64) * 64
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * h)
-        texture.getBytes(
-            &pixels,
-            bytesPerRow: bytesPerRow,
-            from: MTLRegion(origin: .init(x: 0, y: 0, z: 0),
-                            size:   .init(width: w, height: h, depth: 1)),
-            mipmapLevel: 0)
+
+        pixels.withUnsafeMutableBytes { rawPtr in
+            guard let baseAddress = rawPtr.baseAddress else { return }
+            texture.getBytes(
+                baseAddress,
+                bytesPerRow: bytesPerRow,
+                from: MTLRegion(origin: .init(x: 0, y: 0, z: 0),
+                                size:   .init(width: w, height: h, depth: 1)),
+                mipmapLevel: 0)
+        }
 
         guard
-            let ctx = CGContext(
-                data: &pixels,
-                width: w, height: h,
+            let data = CFDataCreate(kCFAllocatorDefault, pixels, pixels.count),
+            let provider = CGDataProvider(data: data),
+            let cgImage = CGImage(
+                width: w,
+                height: h,
                 bitsPerComponent: 8,
+                bitsPerPixel: 32,
                 bytesPerRow: bytesPerRow,
                 space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
-            let cgImage = ctx.makeImage()
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
         else { return nil }
 
         return UIImage(cgImage: cgImage)

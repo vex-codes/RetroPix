@@ -19,6 +19,8 @@ struct ContentView: View {
     @State private var countdownRemaining: Int? = nil
     @State private var countdownTask: Task<Void, Never>? = nil
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         let rotation = orientationObserver.uiRotationAngle
 
@@ -39,7 +41,7 @@ struct ContentView: View {
 
                     if let renderer {
                         ZStack {
-                            MetalView(renderer: renderer, isPaused: showSettings)
+                            MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
                             CrosshairOverlay()
 
                             if let count = countdownRemaining {
@@ -85,31 +87,37 @@ struct ContentView: View {
         .onAppear {
             vm.isPortrait = true
             vm.orientation = 1
+            orientationObserver.start()
             setupRenderer()
+            DispatchQueue.global(qos: .utility).async {
+                _ = ShutterAudioService.shared
+            }
         }
         .onDisappear {
             cameraManager.stopSession()
             orientationObserver.stop()
         }
-        .onReceive(
-            NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
-        ) { _ in 
-            cameraManager.stopSession()
-            orientationObserver.stop()
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
-        ) { _ in 
-            if !showSettings {
-                cameraManager.startSession()
-                orientationObserver.start()
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                if !showSettings {
+                    renderer?.isSuspended = false
+                    cameraManager.startSession()
+                    orientationObserver.start()
+                }
+            case .inactive, .background:
+                renderer?.isSuspended = true
+                cameraManager.stopSession()
+                orientationObserver.stop()
+            @unknown default:
+                break
             }
         }
         .onChange(of: showSettings) { _, open in
             if open {
                 cameraManager.stopSession()
                 orientationObserver.stop()
-            } else {
+            } else if scenePhase == .active {
                 cameraManager.startSession()
                 orientationObserver.start()
             }
@@ -120,6 +128,9 @@ struct ContentView: View {
         }
         .onChange(of: vm.ditherIntensity) { _, new in
             renderer?.ditherSpread = new
+        }
+        .onChange(of: vm.ditherAlgorithm) { _, newAlg in
+            renderer?.ditherAlgorithm = newAlg.rawIndex
         }
         .onChange(of: vm.evBias) { _, new in
             cameraManager.setExposureBias(new)
@@ -152,6 +163,7 @@ struct ContentView: View {
         renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
+        renderer?.ditherAlgorithm = vm.ditherAlgorithm.rawIndex
     }
 
     // MARK: — Shutter & Timer Handling

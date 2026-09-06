@@ -17,15 +17,20 @@ final class DeviceOrientationObserver {
     var uiRotationAngle: Double = 0.0
 
     private let motion = CMMotionManager()
+    private let motionQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.name = "retropix.accelerometer.queue"
+        q.qualityOfService = .utility
+        q.maxConcurrentOperationCount = 1
+        return q
+    }()
 
-    init() {
-        start()
-    }
+    init() {}
 
     func start() {
         guard motion.isAccelerometerAvailable else { return }
-        motion.accelerometerUpdateInterval = 0.15
-        motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+        motion.accelerometerUpdateInterval = 0.2
+        motion.startAccelerometerUpdates(to: motionQueue) { [weak self] data, _ in
             guard let self, let data else { return }
             let x = data.acceleration.x
             let y = data.acceleration.y
@@ -50,17 +55,20 @@ final class DeviceOrientationObserver {
             }
 
             if newOrientation != self.orientation {
-                self.orientation = newOrientation
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                    switch newOrientation {
-                    case .portrait:
-                        self.uiRotationAngle = 0
-                    case .landscapeLeft:
-                        self.uiRotationAngle = 90
-                    case .landscapeRight:
-                        self.uiRotationAngle = -90
-                    case .portraitUpsideDown:
-                        self.uiRotationAngle = 180
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, newOrientation != self.orientation else { return }
+                    self.orientation = newOrientation
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        switch newOrientation {
+                        case .portrait:
+                            self.uiRotationAngle = 0
+                        case .landscapeLeft:
+                            self.uiRotationAngle = 90
+                        case .landscapeRight:
+                            self.uiRotationAngle = -90
+                        case .portraitUpsideDown:
+                            self.uiRotationAngle = 180
+                        }
                     }
                 }
             }

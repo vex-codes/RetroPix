@@ -147,6 +147,64 @@ struct CameraSettingsView: View {
 
                         Divider().background(RetroTheme.border).padding(.vertical, 14)
 
+                        // ── Dithering Engine ──────────────────────────────────
+                        SectionHeader(title: "DITHERING ENGINE", sub: "Select algorithm and spatial dispersion")
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("ALGORITHM")
+                                .font(RetroTheme.mono(10))
+                                .foregroundStyle(RetroTheme.dimText)
+
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(DitherAlgorithm.allCases) { alg in
+                                    Button {
+                                        vm.ditherAlgorithm = alg
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    } label: {
+                                        Text(alg.displayLabel)
+                                            .font(RetroTheme.mono(10))
+                                            .foregroundStyle(vm.ditherAlgorithm == alg ? RetroTheme.bg : RetroTheme.green)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(vm.ditherAlgorithm == alg ? RetroTheme.green : Color.clear)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .stroke(RetroTheme.green.opacity(0.5), lineWidth: 1)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            // Dither Amount Slider
+                            HStack {
+                                Text("DITHER")
+                                    .font(RetroTheme.mono(10))
+                                    .foregroundStyle(RetroTheme.dimText)
+                                Spacer()
+                                Text(vm.ditherLabel)
+                                    .font(RetroTheme.mono(10))
+                                    .foregroundStyle(RetroTheme.amber)
+                            }
+                            .padding(.top, 4)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(vm.ditherIntensity) },
+                                    set: { vm.ditherIntensity = Float($0) }
+                                ),
+                                in: 0.0...1.0
+                            )
+                            .tint(RetroTheme.amber)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+
+                        Divider().background(RetroTheme.border).padding(.vertical, 14)
+
                         // ── Palette Creation & Generation ─────────────────────
                         SectionHeader(title: "PALETTE CREATOR & GENERATOR", sub: "Synthesize harmonic or custom palettes")
 

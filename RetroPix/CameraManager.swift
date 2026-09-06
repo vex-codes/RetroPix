@@ -7,22 +7,21 @@
 
 import AVFoundation
 import Metal
+import UIKit
 
 final class CameraManager: NSObject, @unchecked Sendable {
 
     // MARK: — State
 
     private var captureSession: AVCaptureSession?
-    private var textureCache: CVMetalTextureCache?
-    private var currentCamera: AVCaptureDevice?   // retained for EV bias updates
+    nonisolated(unsafe) private var textureCache: CVMetalTextureCache?
+    nonisolated(unsafe) private var currentCamera: AVCaptureDevice?   // retained for EV bias updates
 
-    private(set) var isTorchOn: Bool = false
-    var hasTorch: Bool {
-        currentCamera?.hasTorch ?? (AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)?.hasTorch ?? false)
-    }
+    nonisolated(unsafe) private(set) var isTorchOn: Bool = false
+    nonisolated(unsafe) private(set) var hasTorch: Bool = true
 
     private let textureLock = NSLock()
-    private var _cameraTexture: MTLTexture?
+    nonisolated(unsafe) private var _cameraTexture: MTLTexture?
 
     /// Latest camera frame as a Metal texture. Safe to read from any thread.
     var cameraTexture: MTLTexture? {
@@ -31,11 +30,27 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     private let sessionQueue = DispatchQueue(label: "retropix.camera.session", qos: .userInteractive)
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: — Setup
 
     func setup(device: MTLDevice) {
         CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
         requestPermissionAndStart()
+    }
+
+    @objc private func handleMemoryWarning() {
+        if let cache = textureCache {
+            CVMetalTextureCacheFlush(cache, 0)
+        }
     }
 
     private func requestPermissionAndStart() {
@@ -90,6 +105,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
             }
             camera.unlockForConfiguration()
             self.currentCamera = camera
+            self.hasTorch = camera.hasTorch
 
             // --- Output ---
             let output = AVCaptureVideoDataOutput()
@@ -159,46 +175,56 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     // MARK: — Torch / Flash
 
-    /// Toggles hardware torch on camera. Returns new torch state.
+    /// Toggles hardware torch on camera asynchronously on sessionQueue. Returns optimistic new torch state.
     @discardableResult
     func toggleTorch() -> Bool {
-        guard let camera = currentCamera, camera.hasTorch else {
+        guard hasTorch else {
             isTorchOn = false
             return false
         }
-
-        do {
-            try camera.lockForConfiguration()
-            if isTorchOn {
-                camera.torchMode = .off
-                isTorchOn = false
-            } else {
-                if camera.isTorchModeSupported(.on) {
+        let targetState = !isTorchOn
+        isTorchOn = targetState
+        sessionQueue.async { [weak self] in
+            guard let self, let camera = self.currentCamera, camera.hasTorch else { return }
+            do {
+                try camera.lockForConfiguration()
+                if targetState && camera.isTorchModeSupported(.on) {
                     try camera.setTorchModeOn(level: 1.0)
-                    isTorchOn = true
+                } else {
+                    camera.torchMode = .off
+                }
+                camera.unlockForConfiguration()
+            } catch {
+                DispatchQueue.main.async {
+                    self.isTorchOn = false
                 }
             }
-            camera.unlockForConfiguration()
-            return isTorchOn
-        } catch {
-            return false
         }
+        return targetState
     }
 
     func setTorch(_ on: Bool) {
-        guard let camera = currentCamera, camera.hasTorch else {
+        guard hasTorch else {
             isTorchOn = false
             return
         }
-        try? camera.lockForConfiguration()
-        if on && camera.isTorchModeSupported(.on) {
-            try? camera.setTorchModeOn(level: 1.0)
-            isTorchOn = true
-        } else {
-            camera.torchMode = .off
-            isTorchOn = false
+        isTorchOn = on
+        sessionQueue.async { [weak self] in
+            guard let self, let camera = self.currentCamera, camera.hasTorch else { return }
+            do {
+                try camera.lockForConfiguration()
+                if on && camera.isTorchModeSupported(.on) {
+                    try camera.setTorchModeOn(level: 1.0)
+                } else {
+                    camera.torchMode = .off
+                }
+                camera.unlockForConfiguration()
+            } catch {
+                DispatchQueue.main.async {
+                    self.isTorchOn = false
+                }
+            }
         }
-        camera.unlockForConfiguration()
     }
 
 }

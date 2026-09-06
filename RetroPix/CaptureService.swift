@@ -7,14 +7,33 @@
 //     → UIImpactFeedbackGenerator(.rigid) haptic pop
 
 import CoreGraphics
+import ImageIO
 import Photos
 import UIKit
+import UniformTypeIdentifiers
+
+enum PhotoCaptureError: LocalizedError {
+    case permissionDenied
+    case renderFailed
+    case encodingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .permissionDenied:
+            return "Photo library access is not granted. Please allow access in Settings."
+        case .renderFailed:
+            return "Failed to render pixel art image."
+        case .encodingFailed:
+            return "Failed to encode sanitized image data."
+        }
+    }
+}
 
 enum CaptureService {
 
     /// Captures the current pixel texture, upscales 8× with strictly
     /// nearest-neighbor interpolation, orientates matching how user held device,
-    /// applies optional frame borders and 90s date/time stamp, saves to the Photo Library.
+    /// applies optional frame borders and 90s date/time stamp, sanitizes metadata, and saves to the Photo Library.
     @MainActor
     static func capture(
         from renderer: MetalRenderer,
@@ -22,13 +41,17 @@ enum CaptureService {
         dateStampMode: DateStampMode = .off,
         frameBorderEnabled: Bool = false
     ) async throws {
+        guard await verifyPhotoPermission() else {
+            throw PhotoCaptureError.permissionDenied
+        }
+
         // 1. Readback — runs synchronously but only briefly (GPU flush + memcpy of pixel texture)
-        guard let source = renderer.capturePixelImage() else { return }
-        guard let cgSource = source.cgImage else { return }
+        guard let source = renderer.capturePixelImage() else { throw PhotoCaptureError.renderFailed }
+        guard let cgSource = source.cgImage else { throw PhotoCaptureError.renderFailed }
 
         let outW = renderer.outputWidth
         let outH = renderer.outputHeight
-        guard outW > 0, outH > 0 else { return }
+        guard outW > 0, outH > 0 else { throw PhotoCaptureError.renderFailed }
 
         // 2. Map target dimensions and rotation from physical device orientation
         let targetW: Int
@@ -57,14 +80,15 @@ enum CaptureService {
         }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerRow = ((targetW * 4 + 63) / 64) * 64
         guard let ctx = CGContext(
             data: nil,
             width: targetW, height: targetH,
             bitsPerComponent: 8,
-            bytesPerRow: targetW * 4,
+            bytesPerRow: bytesPerRow,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return }
+        ) else { throw PhotoCaptureError.renderFailed }
 
         ctx.interpolationQuality = .none   // CRITICAL — hard pixel edges, never blurry
 
@@ -179,23 +203,65 @@ enum CaptureService {
             UIGraphicsPopContext()
         }
 
-        guard let upscaledCG = ctx.makeImage() else { return }
-        let upscaled = UIImage(cgImage: upscaledCG)
+        guard let upscaledCG = ctx.makeImage() else { throw PhotoCaptureError.renderFailed }
 
-        // 4. Save to Photo Library
-        try await PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAsset(from: upscaled)
+        // 4. Sanitize metadata (strip GPS, device model, serial numbers)
+        guard let cleanData = createSanitizedImageData(from: upscaledCG) else {
+            throw PhotoCaptureError.encodingFailed
         }
 
-        // 5. Haptic pop
+        // 5. Save sanitized image to Photo Library
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, data: cleanData, options: nil)
+        }
+
+        // 6. Haptic pop
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
     }
 
-    /// Requests Photo Library add permission. Call on first launch.
+    /// Verifies or requests Photo Library add-only permission, supporting iOS 14+ Limited access.
+    @MainActor
+    static func verifyPhotoPermission() async -> Bool {
+        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        switch status {
+        case .authorized, .limited:
+            return true
+        case .notDetermined:
+            let newStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            return newStatus == .authorized || newStatus == .limited
+        case .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// Requests Photo Library add permission if not yet determined. Call on first launch.
     @MainActor
     static func requestPhotoPermissionIfNeeded() async {
-        if PHPhotoLibrary.authorizationStatus(for: .addOnly) == .notDetermined {
-            _ = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-        }
+        _ = await verifyPhotoPermission()
+    }
+
+    /// Strips GPS, camera serials, and device hardware identifiers before writing to Photo Library.
+    private static func createSanitizedImageData(from cgImage: CGImage) -> Data? {
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutableData as CFMutableData,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+
+        // Explicitly empty dictionaries: zero GPS, zero camera serial, zero device ID
+        let cleanProperties: [CFString: Any] = [
+            kCGImagePropertyTIFFDictionary: [:] as [String: Any],
+            kCGImagePropertyExifDictionary: [:] as [String: Any],
+            kCGImagePropertyGPSDictionary: [:] as [String: Any]
+        ]
+
+        CGImageDestinationAddImage(destination, cgImage, cleanProperties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return mutableData as Data
     }
 }

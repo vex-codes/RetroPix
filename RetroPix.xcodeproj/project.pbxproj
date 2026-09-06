@@ -256,8 +256,9 @@
 				DEVELOPMENT_TEAM = 9JBAM658FB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix uses the camera to capture dithered retro-style photos.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "RetroPix saves captured photos to your Photo Library.";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix requires camera access to process and preview real-time 8-bit dithered video.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Used strictly to save your captured retro photos to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,8 +292,9 @@
 				DEVELOPMENT_TEAM = 9JBAM658FB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix uses the camera to capture dithered retro-style photos.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "RetroPix saves captured photos to your Photo Library.";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix requires camera access to process and preview real-time 8-bit dithered video.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Used strictly to save your captured retro photos to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
