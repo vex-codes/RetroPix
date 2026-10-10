@@ -246,7 +246,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         guard size.width > 0, size.height > 0, outputWidth > 0, outputHeight > 0 else { return }
         let screen = Float(size.width / size.height)
         let content = Float(outputWidth) / Float(outputHeight)
-        if screen > content {
+        if abs(screen - content) < 0.005 {
+            viewportScale = SIMD2(1.0, 1.0)
+        } else if screen > content {
             viewportScale = SIMD2(content / screen, 1.0)
         } else {
             viewportScale = SIMD2(1.0, screen / content)

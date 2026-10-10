@@ -31,7 +31,7 @@ struct ContentView: View {
 
             // Main vertical layout: Top Bar → Viewfinder Frame → Control Deck
             VStack(spacing: 0) {
-                TopOSDBar(vm: vm, rotation: rotation, onMenu: { showSettings = true })
+                TopOSDBar(vm: vm, onMenu: { showSettings = true })
 
                 // Viewfinder container: strict aspect ratio fit, pinch to zoom
                 let (w, h) = vm.outputSize
@@ -46,11 +46,15 @@ struct ContentView: View {
                             CrosshairOverlay()
 
                             if vm.dateStampMode != .off {
-                                ViewfinderQuartzDateStamp(mode: vm.dateStampMode, rotation: rotation)
+                                ViewfinderQuartzDateStamp(
+                                    mode: vm.dateStampMode,
+                                    orientation: orientationObserver.orientation,
+                                    rotation: rotation
+                                )
                             }
 
                             if let count = countdownRemaining {
-                                CountdownOSDOverlay(remaining: count, rotation: rotation)
+                                CountdownOSDOverlay(remaining: count)
                             }
 
                             // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
@@ -305,14 +309,13 @@ struct ContentView: View {
 
 private struct TopOSDBar: View {
     var vm: CameraViewModel
-    let rotation: Double
     let onMenu: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             // Engine mode switcher + Aspect ratio quick switchers + self-timer
             HStack(spacing: 6) {
-                EngineModeButton(mode: vm.engineMode, rotation: rotation) {
+                EngineModeButton(mode: vm.engineMode) {
                     vm.cycleEngineMode()
                 }
 
@@ -328,7 +331,6 @@ private struct TopOSDBar: View {
                     ) {
                         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                     }
-                    .rotationEffect(.degrees(rotation))
                 } else {
                     ForEach(AspectRatio.allCases) { ratio in
                         RatioButton(
@@ -338,19 +340,18 @@ private struct TopOSDBar: View {
                             vm.activeRatio = ratio
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         }
-                        .rotationEffect(.degrees(rotation))
                     }
                 }
 
                 // Self-Timer Quick Button
-                TimerButton(duration: vm.timerDuration, rotation: rotation) {
+                TimerButton(duration: vm.timerDuration) {
                     vm.cycleTimer()
                 }
             }
 
             Spacer()
 
-            // Menu button (three lines, square 28×28 so it never clips on rotation)
+            // Menu button (three lines)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onMenu()
@@ -371,7 +372,6 @@ private struct TopOSDBar: View {
                 )
             }
             .frame(width: 44, height: 44)
-            .rotationEffect(.degrees(rotation))
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -696,7 +696,6 @@ private struct ArrowBtn: View {
 
 private struct CountdownOSDOverlay: View {
     let remaining: Int
-    let rotation: Double
     @State private var isBlinking = false
 
     var body: some View {
@@ -709,7 +708,6 @@ private struct CountdownOSDOverlay: View {
                 .foregroundStyle(remaining <= 3 ? RetroTheme.amber : RetroTheme.green)
                 .scaleEffect(isBlinking ? 1.08 : 0.95)
                 .shadow(color: (remaining <= 3 ? RetroTheme.amber : RetroTheme.green).opacity(0.8), radius: 14)
-                .rotationEffect(.degrees(rotation))
         }
         .allowsHitTesting(false)
         .onAppear {
@@ -857,6 +855,7 @@ final class ShutterAudioService: @unchecked Sendable {
 
 private struct ViewfinderQuartzDateStamp: View {
     let mode: DateStampMode
+    let orientation: DeviceOrientation
     let rotation: Double
 
     var body: some View {
@@ -865,23 +864,45 @@ private struct ViewfinderQuartzDateStamp: View {
             let stampH: CGFloat = 12.0
             let stampW = QuartzDateStampRenderer.calculateWidth(text: stampText, digitHeight: stampH)
 
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    QuartzDateStampCanvas(
-                        text: stampText,
-                        color: (mode == .orange)
-                            ? UIColor(red: 1.0, green: 0.48, blue: 0.02, alpha: 0.98)
-                            : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98)
-                    )
-                    .frame(width: stampW, height: stampH)
-                    .rotationEffect(.degrees(rotation))
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 8)
-                }
+            let isQuarterTurn = (orientation == .landscapeLeft || orientation == .landscapeRight)
+            let boxW = isQuarterTurn ? stampH : stampW
+            let boxH = isQuarterTurn ? stampW : stampH
+
+            ZStack(alignment: stampAlignment) {
+                Color.clear
+
+                QuartzDateStampCanvas(
+                    text: stampText,
+                    color: (mode == .orange)
+                        ? UIColor(red: 1.0, green: 0.48, blue: 0.02, alpha: 0.98)
+                        : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98)
+                )
+                .frame(width: stampW, height: stampH)
+                .rotationEffect(.degrees(rotation))
+                .frame(width: boxW, height: boxH)
+                .padding(stampPaddingEdges, 8)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: orientation)
             .allowsHitTesting(false)
+        }
+    }
+
+    private var stampAlignment: Alignment {
+        switch orientation {
+        case .portrait: return .bottomTrailing
+        case .landscapeLeft: return .bottomLeading
+        case .landscapeRight: return .topTrailing
+        case .portraitUpsideDown: return .topLeading
+        }
+    }
+
+    private var stampPaddingEdges: Edge.Set {
+        switch orientation {
+        case .portrait: return [.bottom, .trailing]
+        case .landscapeLeft: return [.bottom, .leading]
+        case .landscapeRight: return [.top, .trailing]
+        case .portraitUpsideDown: return [.top, .leading]
         }
     }
 

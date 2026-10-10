@@ -105,7 +105,7 @@ struct ColorSwatchBar: View {
 struct CrosshairOverlay: View {
     let arm: CGFloat    = 18
     let thick: CGFloat  = 1.5
-    let pad: CGFloat    = 14
+    let pad: CGFloat    = 2
     let color: Color    = RetroTheme.green.opacity(0.55)
 
     var body: some View {
