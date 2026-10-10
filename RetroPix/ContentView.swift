@@ -46,39 +46,13 @@ struct ContentView: View {
                     if let renderer {
                         GeometryReader { geo in
                             ZStack {
-                                MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
-                                CrosshairOverlay()
-
-                                if vm.gridMode != .off {
-                                    ViewfinderGridOverlay(mode: vm.gridMode)
-                                }
-
-                                if vm.dateStampMode != .off {
-                                    ViewfinderQuartzDateStamp(
-                                        mode: vm.dateStampMode,
-                                        orientation: orientationObserver.orientation,
-                                        rotation: rotation
-                                    )
-                                }
-
-                                if let count = countdownRemaining {
-                                    CountdownOSDOverlay(remaining: count)
-                                }
-
-                                if let pt = focusPoint {
-                                    RetroFocusReticleView(point: pt)
-                                }
-
-                                // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
-                                Color.black
-                                    .opacity(isSwitchingCamera ? 1.0 : 0.0)
-                                    .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
+                                viewfinderLayer(geo: geo, renderer: renderer, rotation: rotation)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) {
                                 handleCameraSwitch()
                             }
-                            .onTapGesture(count: 1) { location in
+                            .onTapGesture(coordinateSpace: .local) { location in
                                 handleFocusTap(at: location, in: geo.size)
                             }
                         }
@@ -388,6 +362,37 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func viewfinderLayer(geo: GeometryProxy, renderer: MetalRenderer, rotation: Double) -> some View {
+        MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
+        CrosshairOverlay()
+
+        if vm.gridMode != .off {
+            ViewfinderGridOverlay(mode: vm.gridMode)
+        }
+
+        if vm.dateStampMode != .off {
+            ViewfinderQuartzDateStamp(
+                mode: vm.dateStampMode,
+                orientation: orientationObserver.orientation,
+                rotation: rotation
+            )
+        }
+
+        if let count = countdownRemaining {
+            CountdownOSDOverlay(remaining: count)
+        }
+
+        if let pt = focusPoint {
+            RetroFocusReticleView(point: pt)
+        }
+
+        // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
+        Color.black
+            .opacity(isSwitchingCamera ? 1.0 : 0.0)
+            .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
     }
 }
 
@@ -851,16 +856,18 @@ final class ShutterAudioService: @unchecked Sendable {
     /// Plays a random authentic camera shutter sound on picture capture
     func play() {
         guard !shutterPlayers.isEmpty else { return }
-        let player = shutterPlayers.randomElement()!
-        player.currentTime = 0
-        player.play()
+        let player = shutterPlayers.randomElement()
+        DispatchQueue.global(qos: .userInitiated).async {
+            player?.currentTime = 0
+            player?.play()
+        }
     }
 
     func playBeep(urgent: Bool = false) {
         let p = urgent ? urgentBeepPlayer : normalBeepPlayer
-        if let p {
-            p.currentTime = 0
-            p.play()
+        DispatchQueue.global(qos: .userInitiated).async {
+            p?.currentTime = 0
+            p?.play()
         }
         UIImpactFeedbackGenerator(style: urgent ? .rigid : .light).impactOccurred()
     }
