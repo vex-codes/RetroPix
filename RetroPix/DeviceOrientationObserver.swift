@@ -16,10 +16,6 @@ final class DeviceOrientationObserver {
     var orientation: DeviceOrientation = .portrait
     var uiRotationAngle: Double = 0.0
 
-    var isLandscape: Bool {
-        orientation == .landscapeLeft || orientation == .landscapeRight
-    }
-
     private let motion = CMMotionManager()
     private let motionQueue: OperationQueue = {
         let q = OperationQueue()

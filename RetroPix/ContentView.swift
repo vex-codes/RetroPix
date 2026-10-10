@@ -23,57 +23,81 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        GeometryReader { geo in
-            let isLandscape = orientationObserver.isLandscape
-            let isLandscapeLeft = orientationObserver.orientation == .landscapeLeft
+        let rotation = orientationObserver.uiRotationAngle
 
-            ZStack {
-                // Base background
-                RetroTheme.bg.ignoresSafeArea()
+        ZStack {
+            // Base background
+            RetroTheme.bg.ignoresSafeArea()
 
-                if isLandscape {
-                    LandscapeDigicamView(
-                        vm: vm,
-                        cameraManager: cameraManager,
-                        renderer: renderer,
-                        orientation: orientationObserver.orientation,
-                        isCountingDown: countdownRemaining != nil,
-                        isSwitchingCamera: isSwitchingCamera,
-                        countdownRemaining: countdownRemaining,
-                        onShutter: handleShutterTap,
-                        onFlipCamera: handleCameraSwitch,
-                        onMenu: { showSettings = true }
-                    )
-                    .frame(width: geo.size.height, height: geo.size.width)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                    .rotationEffect(.degrees(isLandscapeLeft ? 90 : -90))
-                } else {
-                    PortraitDigicamView(
-                        vm: vm,
-                        cameraManager: cameraManager,
-                        renderer: renderer,
-                        isCountingDown: countdownRemaining != nil,
-                        isSwitchingCamera: isSwitchingCamera,
-                        countdownRemaining: countdownRemaining,
-                        onShutter: handleShutterTap,
-                        onFlipCamera: handleCameraSwitch,
-                        onMenu: { showSettings = true }
-                    )
-                    .frame(width: geo.size.width, height: geo.size.height)
+            // Main vertical layout: Top Bar → Viewfinder Frame → Control Deck
+            VStack(spacing: 0) {
+                TopOSDBar(vm: vm, rotation: rotation, onMenu: { showSettings = true })
+
+                // Viewfinder container: strict aspect ratio fit, pinch to zoom
+                let (w, h) = vm.outputSize
+                let aspect = CGFloat(w) / CGFloat(h)
+
+                ZStack {
+                    Color.black
+
+                    if let renderer {
+                        ZStack {
+                            MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
+                            CrosshairOverlay()
+
+                            if vm.dateStampMode != .off {
+                                ViewfinderQuartzDateStamp(mode: vm.dateStampMode, rotation: rotation)
+                            }
+
+                            if let count = countdownRemaining {
+                                CountdownOSDOverlay(remaining: count, rotation: rotation)
+                            }
+
+                            // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
+                            Color.black
+                                .opacity(isSwitchingCamera ? 1.0 : 0.0)
+                                .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
+                        }
+                        .aspectRatio(aspect, contentMode: .fit)
+                        .clipped()
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    handleCameraSwitch()
+                }
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            vm.updateZoom(magnification: value)
+                        }
+                        .onEnded { _ in
+                            vm.commitZoom()
+                        }
+                )
 
-                // Shutter white flash overlay
-                Color.white
-                    .opacity(shutterFlash)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+                // Bottom control deck
+                PortraitDeck(
+                    vm: vm,
+                    cameraManager: cameraManager,
+                    isCountingDown: countdownRemaining != nil,
+                    rotation: rotation,
+                    onShutter: handleShutterTap,
+                    onFlipCamera: handleCameraSwitch
+                )
             }
+            .ignoresSafeArea(edges: .bottom)
+
+            // Shutter white flash overlay
+            Color.white
+                .opacity(shutterFlash)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)
-        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: orientationObserver.isLandscape)
-        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: orientationObserver.orientation)
         .onAppear {
             vm.isPortrait = true
             vm.orientation = 1
@@ -277,326 +301,11 @@ struct ContentView: View {
     }
 }
 
-// MARK: — Portrait Layout
-private struct PortraitDigicamView: View {
-    var vm: CameraViewModel
-    var cameraManager: CameraManager
-    var renderer: MetalRenderer?
-    let isCountingDown: Bool
-    let isSwitchingCamera: Bool
-    let countdownRemaining: Int?
-    let onShutter: () -> Void
-    let onFlipCamera: () -> Void
-    let onMenu: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TopOSDBar(vm: vm, onMenu: onMenu)
-
-            // Viewfinder container: strict aspect ratio fit, pinch to zoom
-            let (w, h) = vm.outputSize
-            let aspect = CGFloat(w) / CGFloat(h)
-
-            ZStack {
-                Color.black
-
-                if let renderer {
-                    ZStack {
-                        MetalView(renderer: renderer, isPaused: false)
-                        CrosshairOverlay()
-
-                        if vm.dateStampMode != .off {
-                            ViewfinderQuartzDateStamp(mode: vm.dateStampMode, rotation: 0.0)
-                        }
-
-                        if let count = countdownRemaining {
-                            CountdownOSDOverlay(remaining: count, rotation: 0.0)
-                        }
-
-                        Color.black
-                            .opacity(isSwitchingCamera ? 1.0 : 0.0)
-                            .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
-                    }
-                    .aspectRatio(aspect, contentMode: .fit)
-                    .clipped()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                onFlipCamera()
-            }
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { value in
-                        vm.updateZoom(magnification: value)
-                    }
-                    .onEnded { _ in
-                        vm.commitZoom()
-                    }
-            )
-
-            PortraitDeck(
-                vm: vm,
-                cameraManager: cameraManager,
-                isCountingDown: isCountingDown,
-                onShutter: onShutter,
-                onFlipCamera: onFlipCamera
-            )
-        }
-        .ignoresSafeArea(edges: .bottom)
-    }
-}
-
-// MARK: — Landscape Adaptive Digicam Layout
-private struct LandscapeDigicamView: View {
-    var vm: CameraViewModel
-    var cameraManager: CameraManager
-    var renderer: MetalRenderer?
-    let orientation: DeviceOrientation
-    let isCountingDown: Bool
-    let isSwitchingCamera: Bool
-    let countdownRemaining: Int?
-    let onShutter: () -> Void
-    let onFlipCamera: () -> Void
-    let onMenu: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            // Left: Widescreen Viewfinder Frame
-            let (w, h) = vm.outputSize
-            let aspect = CGFloat(h) / CGFloat(w) // In landscape, aspect ratio is inverted (e.g. 240/180 = 4:3)
-
-            ZStack {
-                Color.black
-
-                if let renderer {
-                    GeometryReader { vgeo in
-                        let frameW = vgeo.size.width
-                        let frameH = vgeo.size.height
-
-                        ZStack {
-                            MetalView(renderer: renderer, isPaused: false)
-                                .frame(width: frameH, height: frameW)
-                                .position(x: frameW / 2, y: frameH / 2)
-                                .rotationEffect(.degrees(orientation == .landscapeLeft ? 90 : -90))
-
-                            CrosshairOverlay()
-
-                            if vm.dateStampMode != .off {
-                                ViewfinderQuartzDateStamp(mode: vm.dateStampMode, rotation: 0.0)
-                            }
-
-                            if let count = countdownRemaining {
-                                CountdownOSDOverlay(remaining: count, rotation: 0.0)
-                            }
-
-                            Color.black
-                                .opacity(isSwitchingCamera ? 1.0 : 0.0)
-                                .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
-                        }
-                    }
-                    .aspectRatio(aspect, contentMode: .fit)
-                    .clipped()
-                }
-
-                // Top OSD Telemetry Banner
-                VStack {
-                    HStack {
-                        let modeCode = vm.engineMode == .pixel8Bit ? "" : " [\(vm.activeAestheticProfile.code)]"
-                        let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
-                        Text("\(h)×\(w)  \(vm.activeRatio.displayLabel)\(modeCode)  \(zoomStr)EV \(String(format: "%+.1f", vm.evBias))")
-                            .font(RetroTheme.mono(9))
-                            .foregroundStyle(vm.engineMode == .pixel8Bit ? RetroTheme.amber : RetroTheme.red)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.55))
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                        Spacer()
-                    }
-                    .padding(10)
-                    Spacer()
-                }
-                .allowsHitTesting(false)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                onFlipCamera()
-            }
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { value in
-                        vm.updateZoom(magnification: value)
-                    }
-                    .onEnded { _ in
-                        vm.commitZoom()
-                    }
-            )
-
-            // Right: Authentic Point-and-Shoot Camera Grip Deck
-            LandscapeGripDeck(
-                vm: vm,
-                cameraManager: cameraManager,
-                isCountingDown: isCountingDown,
-                onShutter: onShutter,
-                onFlipCamera: onFlipCamera,
-                onMenu: onMenu
-            )
-            .frame(width: 154)
-        }
-        .background(RetroTheme.bg)
-    }
-}
-
-// MARK: — Right-Hand Camera Grip Deck
-private struct LandscapeGripDeck: View {
-    var vm: CameraViewModel
-    var cameraManager: CameraManager
-    let isCountingDown: Bool
-    let onShutter: () -> Void
-    let onFlipCamera: () -> Void
-    let onMenu: () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            // Row 1: Engine Mode & Menu
-            HStack(spacing: 6) {
-                EngineModeButton(mode: vm.engineMode) {
-                    vm.cycleEngineMode()
-                }
-
-                Spacer()
-
-                Button(action: onMenu) {
-                    VStack(spacing: 2.5) {
-                        Rectangle().fill(RetroTheme.green).frame(width: 12, height: 1.5)
-                        Rectangle().fill(RetroTheme.green).frame(width: 12, height: 1.5)
-                        Rectangle().fill(RetroTheme.green).frame(width: 12, height: 1.5)
-                    }
-                    .frame(width: 26, height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(RetroTheme.green.opacity(0.07))
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(RetroTheme.green.opacity(0.45), lineWidth: 1))
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 10)
-
-            // Row 2: Aspect Ratios & Quick Timer
-            HStack(spacing: 4) {
-                if vm.isFrontCameraLocked {
-                    RatioButton(
-                        label: AspectRatio.ratio4_3.displayLabel,
-                        isActive: true
-                    ) {
-                        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                    }
-                } else {
-                    ForEach(AspectRatio.allCases) { ratio in
-                        RatioButton(
-                            label: ratio.displayLabel,
-                            isActive: vm.activeRatio == ratio
-                        ) {
-                            vm.activeRatio = ratio
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                    }
-                }
-
-                Spacer()
-
-                TimerButton(duration: vm.timerDuration) {
-                    vm.cycleTimer()
-                }
-            }
-            .padding(.horizontal, 10)
-
-            Divider().background(RetroTheme.border)
-
-            Spacer()
-
-            // Row 3: Big Shutter Button
-            ZStack {
-                ShutterButton(action: onShutter)
-
-                if isCountingDown {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(RetroTheme.red)
-                        .frame(width: 14, height: 14)
-                        .allowsHitTesting(false)
-                }
-            }
-
-            Spacer()
-
-            // Row 4: Flash (Left) | Flip (Right)
-            HStack(spacing: 12) {
-                FlashButton(
-                    isFlashOn: vm.isFlashOn,
-                    isEnabled: vm.hasTorch
-                ) {
-                    guard vm.hasTorch else { return }
-                    let state = cameraManager.toggleTorch()
-                    vm.isFlashOn = state
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                }
-
-                CameraFlipButton(isFront: vm.isFrontCamera) {
-                    onFlipCamera()
-                }
-            }
-            .padding(.horizontal, 10)
-
-            Divider().background(RetroTheme.border)
-
-            // Row 5: Cycler
-            if vm.engineMode == .pixel8Bit {
-                PaletteCycler(vm: vm)
-                    .padding(.horizontal, 8)
-            } else {
-                AestheticProfileCycler(vm: vm)
-                    .padding(.horizontal, 8)
-            }
-
-            // Row 6: EV & Date/Dither
-            HStack(spacing: 6) {
-                EVStepper(vm: vm)
-                    .frame(maxWidth: .infinity)
-
-                DeckDivider()
-
-                if vm.engineMode == .pixel8Bit {
-                    DiamondToggle(vm: vm)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    DateStampToggle(vm: vm)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(height: 38)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-        }
-        .background(RetroTheme.panel)
-        .overlay(
-            Rectangle()
-                .fill(RetroTheme.border)
-                .frame(width: 1),
-            alignment: .leading
-        )
-    }
-}
-
 // MARK: — Top OSD bar
 
 private struct TopOSDBar: View {
     var vm: CameraViewModel
-    var rotation: Double = 0.0
+    let rotation: Double
     let onMenu: () -> Void
 
     var body: some View {
@@ -619,6 +328,7 @@ private struct TopOSDBar: View {
                     ) {
                         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                     }
+                    .rotationEffect(.degrees(rotation))
                 } else {
                     ForEach(AspectRatio.allCases) { ratio in
                         RatioButton(
@@ -628,6 +338,7 @@ private struct TopOSDBar: View {
                             vm.activeRatio = ratio
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         }
+                        .rotationEffect(.degrees(rotation))
                     }
                 }
 
@@ -639,7 +350,7 @@ private struct TopOSDBar: View {
 
             Spacer()
 
-            // Menu button (three lines, square 28×28)
+            // Menu button (three lines, square 28×28 so it never clips on rotation)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onMenu()
@@ -660,6 +371,7 @@ private struct TopOSDBar: View {
                 )
             }
             .frame(width: 44, height: 44)
+            .rotationEffect(.degrees(rotation))
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -673,7 +385,7 @@ private struct PortraitDeck: View {
     var vm: CameraViewModel
     var cameraManager: CameraManager
     let isCountingDown: Bool
-    var rotation: Double = 0.0
+    let rotation: Double
     let onShutter: () -> Void
     let onFlipCamera: () -> Void
 
@@ -714,7 +426,7 @@ private struct PortraitDeck: View {
                     .padding(.horizontal, 14)
             }
 
-            // Row 3: Exposure + Dither/Profile
+            // Row 3: Exposure + Dither/Profile (rotates)
             HStack(spacing: 0) {
                 EVStepper(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
@@ -873,7 +585,7 @@ private struct AestheticProfileCycler: View {
 
 private struct EVStepper: View {
     var vm: CameraViewModel
-    var rotation: Double = 0.0
+    let rotation: Double
 
     var body: some View {
         HStack(spacing: 8) {
@@ -903,7 +615,7 @@ private struct EVStepper: View {
 
 private struct DiamondToggle: View {
     var vm: CameraViewModel
-    var rotation: Double = 0.0
+    let rotation: Double
 
     var body: some View {
         Button(action: vm.cycleDither) {
@@ -926,7 +638,7 @@ private struct DiamondToggle: View {
 
 private struct DateStampToggle: View {
     var vm: CameraViewModel
-    var rotation: Double = 0.0
+    let rotation: Double
 
     var body: some View {
         Button(action: vm.cycleDateStamp) {
@@ -984,7 +696,7 @@ private struct ArrowBtn: View {
 
 private struct CountdownOSDOverlay: View {
     let remaining: Int
-    var rotation: Double = 0.0
+    let rotation: Double
     @State private var isBlinking = false
 
     var body: some View {
@@ -1145,7 +857,7 @@ final class ShutterAudioService: @unchecked Sendable {
 
 private struct ViewfinderQuartzDateStamp: View {
     let mode: DateStampMode
-    var rotation: Double = 0.0
+    let rotation: Double
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
