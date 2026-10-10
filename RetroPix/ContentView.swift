@@ -296,8 +296,11 @@ struct ContentView: View {
 
         if useRetinaFlash {
             // Front camera Retina Screen Flash: max brightness + True Tone warm illumination
-            let originalBrightness = UIScreen.main.brightness
-            UIScreen.main.brightness = 1.0
+            let activeScreen = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first?.screen
+            let originalBrightness = activeScreen?.brightness ?? 0.8
+            activeScreen?.brightness = 1.0
 
             withAnimation(.easeInOut(duration: 0.06)) {
                 shutterFlash = 1.0
@@ -310,7 +313,7 @@ struct ContentView: View {
 
                 Task {
                     defer {
-                        UIScreen.main.brightness = originalBrightness
+                        activeScreen?.brightness = originalBrightness
                         withAnimation(.easeOut(duration: 0.25)) {
                             shutterFlash = 0.0
                         }
@@ -776,8 +779,10 @@ final class ShutterAudioService: @unchecked Sendable {
     private var urgentBeepPlayer: AVAudioPlayer?
 
     private init() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
 
         // Load authentic user-uploaded camera shutter sounds
         let soundNames = [
