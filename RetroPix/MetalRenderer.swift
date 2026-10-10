@@ -17,7 +17,7 @@ private struct ShaderUniforms {
     var ditherSpread: Float
     var paletteCount: UInt32
     var ditherAlgorithm: UInt32
-    var _pad0: UInt32 = 0
+    var isFrontCamera: UInt32 = 0
     var _pad1: UInt32 = 0
     var _pad2: UInt32 = 0
 }
@@ -282,7 +282,8 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                     outputSize: SIMD2<UInt32>(UInt32(outputWidth), UInt32(outputHeight)),
                     ditherSpread: ditherSpread,
                     paletteCount: paletteCount,
-                    ditherAlgorithm: ditherAlgorithm
+                    ditherAlgorithm: ditherAlgorithm,
+                    isFrontCamera: (cameraManager?.isFrontCamera == true) ? 1 : 0
                 )
                 enc.setBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 1)
 
@@ -326,11 +327,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             else { return }
 
             frameSeed = Float((Int(frameSeed) + 1) % 65536)
+            let isFront = (cameraManager?.isFrontCamera == true)
             var uniforms = activeAestheticProfile.makeUniforms(
                 cropUV: cropUV,
                 outputWidth: outputWidth,
                 outputHeight: outputHeight,
-                seed: frameSeed
+                seed: frameSeed,
+                isFrontCamera: isFront
             )
             aestheticUniformBuffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<AestheticUniforms>.stride)
 

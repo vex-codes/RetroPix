@@ -32,9 +32,15 @@ struct AestheticUniforms {
     float  pixelScale;      // min(outW, outH) / 720 — keeps grain/blur size resolution-independent
 };
 
-// Same portrait mapping as pixelKernel: output y → sensor u, output x → sensor v (inverted).
-static inline float2 cameraUV(float nx, float ny, float4 c) {
-    return float2(c.x + ny * (c.z - c.x), c.w - nx * (c.w - c.y));
+// Portrait mapping:
+// - Back camera: output y → sensor u, output x → sensor v (inverted).
+// - Front camera: output x → sensor u (mirrored selfie), output y → sensor v (upright portrait).
+static inline float2 cameraUV(float nx, float ny, float4 c, bool isFrontCamera) {
+    if (isFrontCamera) {
+        return float2(c.z - nx * (c.z - c.x), c.w - ny * (c.w - c.y));
+    } else {
+        return float2(c.x + ny * (c.z - c.x), c.w - nx * (c.w - c.y));
+    }
 }
 
 static inline float  luma(float3 c)     { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
@@ -115,7 +121,8 @@ kernel void aestheticBrightKernel(
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float nx = (float(gid.x) + 0.5) / float(w);
     float ny = (float(gid.y) + 0.5) / float(h);
-    float2 uv = cameraUV(nx, ny, u.cropUV);
+    bool isFront = (u.shadowTint.w > 0.5);
+    float2 uv = cameraUV(nx, ny, u.cropUV, isFront);
 
     // 4 bilinear taps at ±1 full-res px ≈ 4×4 box downsample (avoids sparkle aliasing)
     float2 d = float2((u.cropUV.z - u.cropUV.x) / float(h), (u.cropUV.w - u.cropUV.y) / float(w)) * 0.25;
@@ -172,7 +179,8 @@ kernel void aestheticKernel(
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float nx = (float(gid.x) + 0.5) / float(u.outputSize.x);
     float ny = (float(gid.y) + 0.5) / float(u.outputSize.y);
-    float2 uv = cameraUV(nx, ny, u.cropUV);
+    bool isFront = (u.shadowTint.w > 0.5);
+    float2 uv = cameraUV(nx, ny, u.cropUV, isFront);
     float  r  = length(float2(nx, ny) * 2.0 - 1.0) * 0.70710678;   // 0 centre → 1 corner
 
     // Lens: lateral chromatic aberration — R scaled out, B scaled in about crop centre (§5.2.2)

@@ -128,7 +128,8 @@ public struct AestheticProfile: Identifiable, Equatable, Codable {
         cropUV: SIMD4<Float>,
         outputWidth: Int,
         outputHeight: Int,
-        seed: Float
+        seed: Float,
+        isFrontCamera: Bool = false
     ) -> AestheticUniforms {
         let ck = curveKnots.count >= 5 ? curveKnots : [0.0, 0.25, 0.50, 0.75, 1.0]
         let h = hueDeltas.count >= 8 ? hueDeltas : Array(repeating: 0.0, count: 8)
@@ -153,7 +154,7 @@ public struct AestheticProfile: Identifiable, Equatable, Codable {
             lumA: SIMD4<Float>(l[0], l[1], l[2], l[3]),
             lumB: SIMD4<Float>(l[4], l[5], l[6], l[7]),
             wbGain: SIMD4<Float>(wb[0], wb[1], wb[2], globalSaturation),
-            shadowTint: SIMD4<Float>(st[0], st[1], st[2], 0.0),
+            shadowTint: SIMD4<Float>(st[0], st[1], st[2], isFrontCamera ? 1.0 : 0.0),
             highlightTint: SIMD4<Float>(ht[0], ht[1], ht[2], 0.0),
             m0: SIMD4<Float>(m[0], m[1], m[2], 0.0),
             m1: SIMD4<Float>(m[3], m[4], m[5], 0.0),

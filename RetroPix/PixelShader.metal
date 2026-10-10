@@ -55,7 +55,7 @@ struct KernelUniforms {
     float  ditherSpread;
     uint   paletteCount;
     uint   ditherAlgorithm; // 0: Bayer 8x8, 1: Blue Noise, 2: Atkinson, 3: Floyd-Steinberg
-    uint   _pad0;
+    uint   isFrontCamera;
     uint   _pad1;
     uint   _pad2;
 };
@@ -76,9 +76,17 @@ kernel void pixelKernel(
     float nx = (float(gid.x) + 0.5) / float(uniforms.outputSize.x);
     float ny = (float(gid.y) + 0.5) / float(uniforms.outputSize.y);
 
-    // Portrait: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
-    float u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
-    float v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
+    // Portrait UV mapping
+    float u, v;
+    if (uniforms.isFrontCamera == 1u) {
+        // Front camera: texture X (u) is horizontal (mirrored selfie), texture Y (v) is vertical
+        u = uniforms.cropUV.z - nx * (uniforms.cropUV.z - uniforms.cropUV.x);
+        v = uniforms.cropUV.w - ny * (uniforms.cropUV.w - uniforms.cropUV.y);
+    } else {
+        // Back camera: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
+        u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
+        v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
+    }
 
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float3 color = cameraTexture.sample(s, float2(u, v)).rgb;
@@ -151,8 +159,14 @@ kernel void errorDiffusionKernel(
             float nx = (float(x) + 0.5) / float(w);
             float ny = (float(y) + 0.5) / float(h);
 
-            float u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
-            float v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
+            float u, v;
+            if (uniforms.isFrontCamera == 1u) {
+                u = uniforms.cropUV.z - nx * (uniforms.cropUV.z - uniforms.cropUV.x);
+                v = uniforms.cropUV.w - ny * (uniforms.cropUV.w - uniforms.cropUV.y);
+            } else {
+                u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
+                v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);
+            }
 
             float3 rawColor = cameraTexture.sample(s, float2(u, v)).rgb;
 

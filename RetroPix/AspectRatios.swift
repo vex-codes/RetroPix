@@ -40,9 +40,10 @@ enum AspectRatio: String, CaseIterable, Identifiable, Codable {
     /// On iPhone, front sensor is mounted 180° physically inverted and requires horizontal mirroring for natural selfie framing.
     func cropUV(isFrontCamera: Bool) -> SIMD4<Float> {
         if isFrontCamera {
-            // Front camera locked to 4:3 (3/4 of 16:9 buffer width => 0.125 to 0.875 u bounds).
-            // Vertical u inverted (0.875 -> 0.125) + horizontal v mirrored (1.0 -> 0.0).
-            return SIMD4<Float>(0.875, 1.0, 0.125, 0.0)
+            // Front camera locked to 4:3 portrait inside native 9:16 sensor buffer.
+            // Horizontal u: full width [0.0, 1.0].
+            // Vertical v: centered 4:3 crop (1440/1920) => [0.125, 0.875].
+            return SIMD4<Float>(0.0, 0.125, 1.0, 0.875)
         }
 
         switch self {
