@@ -365,6 +365,200 @@ extension AestheticProfile {
         chromaNoise: 0.0
     )
 
+    /// 8. Kodak Portra 400 ("The Definitive 35mm Portrait Film")
+    public static let kodakPortra400 = AestheticProfile(
+        id: "kodak_portra_400",
+        name: "PORTRA 400",
+        code: "PORTRA-400",
+        subtitle: "Warm Creamy Skin / Pastel Highlights / Muted Greens",
+        category: .analogStock,
+        eraYear: "'98",
+        curveKnots: [0.035, 0.238, 0.505, 0.772, 0.970],
+        highlightRolloff: 0.32,
+        hueDeltas: [-2.0, 3.0, -8.0, -18.0, 8.0, 5.0, 0.0, -2.0],
+        satDeltas: [0.06, 0.04, -0.06, -0.22, -0.12, -0.15, -0.10, -0.05],
+        lumDeltas: [0.04, 0.08, 0.05, -0.06, 0.0, -0.05, 0.0, 0.0],
+        wbRGB: [1.05, 1.01, 0.96],
+        globalSaturation: 0.96,
+        shadowTintRGB: [0.010, 0.020, 0.025],
+        highlightTintRGB: [0.030, 0.020, 0.005],
+        grainAmount: 0.32,
+        grainSize: 1.5,
+        halationStrength: 0.28,
+        halationThreshold: 0.78,
+        vignette: 0.16,
+        opticalSoftness: 0.12,
+        chromaticAberration: 0.0006,
+        chromaNoise: 0.0
+    )
+
+    /// 9. Fujifilm Velvia 50 ("High-Vibrancy Slide Film")
+    public static let fujiVelvia50 = AestheticProfile(
+        id: "fuji_velvia_50",
+        name: "VELVIA 50",
+        code: "VEL-50",
+        subtitle: "Ultra-Saturated Slide / Electric Blues / Deep Inky Blacks",
+        category: .filmSimulation,
+        eraYear: "'90",
+        curveKnots: [0.000, 0.190, 0.515, 0.810, 1.000],
+        highlightRolloff: 0.05,
+        hueDeltas: [0.0, 2.0, -4.0, 6.0, -4.0, 4.0, 5.0, 8.0],
+        satDeltas: [0.35, 0.20, 0.25, 0.40, 0.30, 0.45, 0.25, 0.30],
+        lumDeltas: [-0.05, 0.0, -0.05, 0.05, -0.05, -0.12, 0.0, 0.0],
+        wbRGB: [1.00, 1.02, 1.06],
+        globalSaturation: 1.30,
+        shadowTintRGB: [0.005, 0.005, 0.020],
+        highlightTintRGB: [0.015, 0.010, 0.002],
+        grainAmount: 0.22,
+        grainSize: 1.3,
+        halationStrength: 0.18,
+        halationThreshold: 0.82,
+        vignette: 0.32,
+        opticalSoftness: -0.10,
+        chromaticAberration: 0.0004,
+        chromaNoise: 0.0
+    )
+
+    /// 10. Ricoh GR Digital High-Contrast B&W ("Daido Moriyama Street Style")
+    public static let ricohGrMono = AestheticProfile(
+        id: "ricoh_gr_mono",
+        name: "RICOH GR B&W",
+        code: "GRD-BW",
+        subtitle: "Cult High-Contrast Monochrome / Crushed Shadows / Gritty Grain",
+        category: .digicam,
+        eraYear: "'05",
+        curveKnots: [0.000, 0.120, 0.480, 0.860, 1.000],
+        highlightRolloff: 0.02,
+        hueDeltas: [0, 0, 0, 0, 0, 0, 0, 0],
+        satDeltas: [0, 0, 0, 0, 0, 0, 0, 0],
+        lumDeltas: [0.10, 0.05, -0.05, -0.15, -0.10, -0.20, 0, 0],
+        wbRGB: [1.0, 1.0, 1.0],
+        globalSaturation: 0.00,
+        shadowTintRGB: [0.0, 0.0, 0.0],
+        highlightTintRGB: [0.0, 0.0, 0.0],
+        colorMatrix: [
+            0.299, 0.587, 0.114,
+            0.299, 0.587, 0.114,
+            0.299, 0.587, 0.114
+        ],
+        grainAmount: 0.65,
+        grainSize: 2.2,
+        halationStrength: 0.22,
+        halationThreshold: 0.80,
+        vignette: 0.55,
+        opticalSoftness: -0.40,
+        chromaticAberration: 0.0,
+        chromaNoise: 0.0
+    )
+
+    /// 11. Olympus Mju-II / Stylus Epic ("Cult 35mm Point-and-Shoot Flash")
+    public static let olympusMjuII = AestheticProfile(
+        id: "olympus_mju_ii",
+        name: "OLYMPUS MJU II",
+        code: "MJU-II",
+        subtitle: "Cult 35mm Point & Shoot / Flash Falloff / Warm Flare",
+        category: .analogStock,
+        eraYear: "'91",
+        curveKnots: [0.020, 0.225, 0.510, 0.790, 0.990],
+        highlightRolloff: 0.15,
+        hueDeltas: [-3.0, 2.0, -5.0, -10.0, 4.0, 2.0, 0.0, -3.0],
+        satDeltas: [0.18, 0.12, 0.15, -0.05, 0.05, 0.10, 0.0, 0.05],
+        lumDeltas: [0.06, 0.10, 0.04, -0.08, -0.02, -0.10, 0.0, 0.0],
+        wbRGB: [1.06, 1.01, 0.94],
+        globalSaturation: 1.12,
+        shadowTintRGB: [0.015, 0.010, 0.002],
+        highlightTintRGB: [0.038, 0.024, 0.006],
+        grainAmount: 0.38,
+        grainSize: 1.6,
+        halationStrength: 0.42,
+        halationThreshold: 0.74,
+        vignette: 0.45,
+        opticalSoftness: 0.15,
+        chromaticAberration: 0.0018,
+        chromaNoise: 0.0
+    )
+
+    /// 12. Fujifilm Superia X-TRA 400 ("4th Color Layer Consumer Negative")
+    public static let fujiSuperia400 = AestheticProfile(
+        id: "fuji_superia_400",
+        name: "SUPERIA 400",
+        code: "SUP-400",
+        subtitle: "Emerald Shadow Cast / Vivid Warm Skin / 90s Negative",
+        category: .analogStock,
+        eraYear: "'00",
+        curveKnots: [0.050, 0.245, 0.505, 0.760, 0.965],
+        highlightRolloff: 0.28,
+        hueDeltas: [3.0, 4.0, -6.0, -8.0, -10.0, -4.0, 0.0, 4.0],
+        satDeltas: [0.12, 0.08, 0.10, 0.12, -0.05, 0.08, 0.0, 0.05],
+        lumDeltas: [0.02, 0.05, 0.02, 0.04, -0.05, -0.08, 0.0, 0.0],
+        wbRGB: [1.02, 1.04, 0.97],
+        globalSaturation: 1.08,
+        shadowTintRGB: [0.002, 0.035, 0.020],
+        highlightTintRGB: [0.025, 0.015, 0.002],
+        grainAmount: 0.44,
+        grainSize: 1.8,
+        halationStrength: 0.25,
+        halationThreshold: 0.78,
+        vignette: 0.24,
+        opticalSoftness: 0.08,
+        chromaticAberration: 0.0009,
+        chromaNoise: 0.0
+    )
+
+    /// 13. CPM 35MM ("Dazz Cam Classic 35mm Point-and-Shoot")
+    public static let dazzCPM35 = AestheticProfile(
+        id: "cpm_35",
+        name: "CPM 35MM",
+        code: "CPM-35",
+        subtitle: "Vintage 35mm Compact / Soft Pastels / Warm Lifestyle Glow",
+        category: .analogStock,
+        eraYear: "'95",
+        curveKnots: [0.045, 0.240, 0.510, 0.770, 0.965],
+        highlightRolloff: 0.30,
+        hueDeltas: [2.0, 4.0, -5.0, -15.0, 6.0, -4.0, 0.0, 0.0],
+        satDeltas: [0.12, 0.06, 0.08, -0.18, -0.12, -0.15, -0.05, 0.0],
+        lumDeltas: [0.03, 0.06, 0.04, -0.06, -0.02, -0.08, 0.0, 0.0],
+        wbRGB: [1.05, 1.01, 0.95],
+        globalSaturation: 0.98,
+        shadowTintRGB: [0.025, 0.015, 0.005],
+        highlightTintRGB: [0.032, 0.022, 0.005],
+        grainAmount: 0.30,
+        grainSize: 1.5,
+        halationStrength: 0.32,
+        halationThreshold: 0.76,
+        vignette: 0.20,
+        opticalSoftness: 0.15,
+        chromaticAberration: 0.0008,
+        chromaNoise: 0.0
+    )
+
+    /// 14. Instant 600 ("Polaroid / Instax Chemical Emulsion")
+    public static let polaroid600 = AestheticProfile(
+        id: "polaroid_600",
+        name: "INSTANT 600",
+        code: "INST-600",
+        subtitle: "Instant Chemical Film / Milky Cyan Shadows / Soft Pastels",
+        category: .analogStock,
+        eraYear: "'81",
+        curveKnots: [0.075, 0.260, 0.505, 0.735, 0.940],
+        highlightRolloff: 0.38,
+        hueDeltas: [-3.0, 2.0, -6.0, 8.0, 12.0, 8.0, 0.0, -4.0],
+        satDeltas: [0.05, 0.04, -0.05, -0.15, 0.10, 0.08, 0.0, 0.0],
+        lumDeltas: [0.02, 0.04, 0.02, -0.04, 0.02, -0.06, 0.0, 0.0],
+        wbRGB: [0.98, 1.02, 1.04],
+        globalSaturation: 0.92,
+        shadowTintRGB: [0.010, 0.038, 0.045],
+        highlightTintRGB: [0.035, 0.028, 0.010],
+        grainAmount: 0.40,
+        grainSize: 1.8,
+        halationStrength: 0.36,
+        halationThreshold: 0.72,
+        vignette: 0.35,
+        opticalSoftness: 0.25,
+        chromaticAberration: 0.0014,
+        chromaNoise: 0.0
+    )
+
     public static let allBuiltIn: [AestheticProfile] = [
         .canonG7X,
         .kodakPixpro,
@@ -372,6 +566,14 @@ extension AestheticProfile {
         .fujiNostalgicNeg,
         .ccdDigicam2005,
         .cinestill800T,
-        .kodakGold200
+        .kodakGold200,
+        .kodakPortra400,
+        .fujiVelvia50,
+        .ricohGrMono,
+        .olympusMjuII,
+        .fujiSuperia400,
+        .dazzCPM35,
+        .polaroid600
     ]
 }
+

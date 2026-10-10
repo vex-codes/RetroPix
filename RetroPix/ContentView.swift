@@ -44,6 +44,10 @@ struct ContentView: View {
                             MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
                             CrosshairOverlay()
 
+                            if vm.dateStampMode != .off {
+                                ViewfinderQuartzDateStamp(mode: vm.dateStampMode, rotation: rotation)
+                            }
+
                             if let count = countdownRemaining {
                                 CountdownOSDOverlay(remaining: count, rotation: rotation)
                             }
@@ -387,7 +391,7 @@ private struct PortraitDeck: View {
                     DiamondToggle(vm: vm, rotation: rotation)
                         .frame(maxWidth: .infinity)
                 } else {
-                    AestheticFxBadge(vm: vm, rotation: rotation)
+                    DateStampToggle(vm: vm, rotation: rotation)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -578,21 +582,19 @@ private struct DiamondToggle: View {
     }
 }
 
-// MARK: — Aesthetic FX / Profile quick badge (tap to cycle)
+// MARK: — 90s Quartz Date Stamp Toggle (tap to cycle: OFF → ORG → GRN)
 
-private struct AestheticFxBadge: View {
+private struct DateStampToggle: View {
     var vm: CameraViewModel
     let rotation: Double
 
     var body: some View {
-        Button {
-            vm.cycleAestheticProfile(forward: true)
-        } label: {
+        Button(action: vm.cycleDateStamp) {
             VStack(spacing: 3) {
-                Text(vm.activeAestheticProfile.code)
+                Text(label)
                     .font(RetroTheme.mono(13))
-                    .foregroundStyle(RetroTheme.red)
-                Text("PROFILE")
+                    .foregroundStyle(tintColor)
+                Text("DATE")
                     .font(RetroTheme.mono(7, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
@@ -600,6 +602,22 @@ private struct AestheticFxBadge: View {
         }
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
+    }
+
+    private var label: String {
+        switch vm.dateStampMode {
+        case .off: return "OFF"
+        case .orange: return "'98 ORG"
+        case .green: return "'98 GRN"
+        }
+    }
+
+    private var tintColor: Color {
+        switch vm.dateStampMode {
+        case .off: return RetroTheme.dimText
+        case .orange: return RetroTheme.amber
+        case .green: return RetroTheme.green
+        }
     }
 }
 
@@ -782,3 +800,83 @@ final class ShutterAudioService: @unchecked Sendable {
         return data
     }
 }
+
+// MARK: — Authentic 7-Segment Viewfinder Quartz Date Overlay
+
+private struct ViewfinderQuartzDateStamp: View {
+    let mode: DateStampMode
+    let rotation: Double
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
+            let stampText = formatDate(timeline.date)
+            let stampH: CGFloat = 12.0
+            let stampW = QuartzDateStampRenderer.calculateWidth(text: stampText, digitHeight: stampH)
+
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    QuartzDateStampCanvas(
+                        text: stampText,
+                        color: (mode == .orange)
+                            ? UIColor(red: 1.0, green: 0.48, blue: 0.02, alpha: 0.98)
+                            : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98)
+                    )
+                    .frame(width: stampW, height: stampH)
+                    .rotationEffect(.degrees(rotation))
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 8)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "''yy MM dd  HH:mm"
+        return formatter.string(from: date)
+    }
+}
+
+private struct QuartzDateStampCanvas: UIViewRepresentable {
+    let text: String
+    let color: UIColor
+
+    func makeUIView(context: Context) -> QuartzDateStampUIView {
+        let v = QuartzDateStampUIView()
+        v.backgroundColor = .clear
+        v.isOpaque = false
+        v.text = text
+        v.color = color
+        return v
+    }
+
+    func updateUIView(_ uiView: QuartzDateStampUIView, context: Context) {
+        if uiView.text != text || uiView.color != color {
+            uiView.text = text
+            uiView.color = color
+            uiView.setNeedsDisplay()
+        }
+    }
+}
+
+private final class QuartzDateStampUIView: UIView {
+    var text: String = ""
+    var color: UIColor = .orange
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext(), !text.isEmpty else { return }
+        let h = rect.height
+        QuartzDateStampRenderer.draw(
+            text: text,
+            in: ctx,
+            origin: CGPoint(x: 0, y: 0),
+            digitHeight: h,
+            color: color,
+            withGhosting: true
+        )
+    }
+}
+
