@@ -121,6 +121,74 @@ struct CrosshairOverlay: View {
     }
 }
 
+// MARK: — Retro Digicam Autofocus Reticle
+
+struct RetroFocusReticleView: View {
+    let point: CGPoint
+    @State private var appeared = false
+
+    var body: some View {
+        ZStack {
+            // 4 Corner Brackets
+            ReticleBrackets()
+                .stroke(RetroTheme.green, style: StrokeStyle(lineWidth: 1.5, lineCap: .square))
+                .frame(width: 46, height: 46)
+
+            // Center AF Dot
+            Circle()
+                .fill(RetroTheme.green)
+                .frame(width: 3.5, height: 3.5)
+
+            // Telemetry badge "AF"
+            Text("AF")
+                .font(RetroTheme.mono(8, weight: .bold))
+                .foregroundStyle(RetroTheme.green)
+                .offset(y: -29)
+        }
+        .position(point)
+        .scaleEffect(appeared ? 1.0 : 1.35)
+        .opacity(appeared ? 1.0 : 0.4)
+        .shadow(color: RetroTheme.green.opacity(0.65), radius: 4)
+        .onAppear {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.6)) {
+                appeared = true
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct ReticleBrackets: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let arm: CGFloat = 10
+        let w = rect.width
+        let h = rect.height
+
+        // Top-Left
+        path.move(to: CGPoint(x: 0, y: arm))
+        path.addLine(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: arm, y: 0))
+
+        // Top-Right
+        path.move(to: CGPoint(x: w - arm, y: 0))
+        path.addLine(to: CGPoint(x: w, y: 0))
+        path.addLine(to: CGPoint(x: w, y: arm))
+
+        // Bottom-Right
+        path.move(to: CGPoint(x: w, y: h - arm))
+        path.addLine(to: CGPoint(x: w, y: h))
+        path.addLine(to: CGPoint(x: w - arm, y: h))
+
+        // Bottom-Left
+        path.move(to: CGPoint(x: arm, y: h))
+        path.addLine(to: CGPoint(x: 0, y: h))
+        path.addLine(to: CGPoint(x: 0, y: h - arm))
+
+        return path
+    }
+}
+
 // MARK: — Subtle vertical deck divider
 
 struct DeckDivider: View {

@@ -3,6 +3,7 @@
 
 import AudioToolbox
 import AVFoundation
+import MediaPlayer
 import Photos
 import SwiftUI
 
@@ -19,6 +20,8 @@ struct ContentView: View {
     @State private var countdownRemaining: Int? = nil
     @State private var countdownTask: Task<Void, Never>? = nil
     @State private var isSwitchingCamera: Bool = false
+    @State private var focusPoint: CGPoint? = nil
+    @State private var focusSessionId: UUID = UUID()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -41,40 +44,49 @@ struct ContentView: View {
                     Color.black
 
                     if let renderer {
-                        ZStack {
-                            MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
-                            CrosshairOverlay()
+                        GeometryReader { geo in
+                            ZStack {
+                                MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
+                                CrosshairOverlay()
 
-                            if vm.gridMode != .off {
-                                ViewfinderGridOverlay(mode: vm.gridMode)
+                                if vm.gridMode != .off {
+                                    ViewfinderGridOverlay(mode: vm.gridMode)
+                                }
+
+                                if vm.dateStampMode != .off {
+                                    ViewfinderQuartzDateStamp(
+                                        mode: vm.dateStampMode,
+                                        orientation: orientationObserver.orientation,
+                                        rotation: rotation
+                                    )
+                                }
+
+                                if let count = countdownRemaining {
+                                    CountdownOSDOverlay(remaining: count)
+                                }
+
+                                if let pt = focusPoint {
+                                    RetroFocusReticleView(point: pt)
+                                }
+
+                                // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
+                                Color.black
+                                    .opacity(isSwitchingCamera ? 1.0 : 0.0)
+                                    .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
                             }
-
-                            if vm.dateStampMode != .off {
-                                ViewfinderQuartzDateStamp(
-                                    mode: vm.dateStampMode,
-                                    orientation: orientationObserver.orientation,
-                                    rotation: rotation
-                                )
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) {
+                                handleCameraSwitch()
                             }
-
-                            if let count = countdownRemaining {
-                                CountdownOSDOverlay(remaining: count)
+                            .onTapGesture(count: 1) { location in
+                                handleFocusTap(at: location, in: geo.size)
                             }
-
-                            // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
-                            Color.black
-                                .opacity(isSwitchingCamera ? 1.0 : 0.0)
-                                .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
                         }
                         .aspectRatio(aspect, contentMode: .fit)
                         .clipped()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    handleCameraSwitch()
-                }
                 .gesture(
                     MagnificationGesture()
                         .onChanged { value in
@@ -102,6 +114,12 @@ struct ContentView: View {
                 .opacity(shutterFlash)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+        }
+        .background {
+            VolumeButtonShutterHandler(
+                isEnabled: scenePhase == .active && !showSettings && !isCapturing && countdownRemaining == nil,
+                onShutter: handleShutterTap
+            )
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -204,6 +222,7 @@ struct ContentView: View {
     private func handleCameraSwitch() {
         guard !isSwitchingCamera else { return }
         isSwitchingCamera = true
+        focusPoint = nil
         vm.toggleCamera()
         cameraManager.isFrontCamera = vm.isFrontCamera
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -350,6 +369,23 @@ struct ContentView: View {
                     frameBorderEnabled: vm.frameBorderEnabled,
                     filmFrameStyle: vm.filmFrameStyle
                 )
+            }
+        }
+    }
+
+    private func handleFocusTap(at location: CGPoint, in size: CGSize) {
+        focusPoint = location
+        let sessionId = UUID()
+        focusSessionId = sessionId
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        cameraManager.focus(at: location, in: size)
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            if focusSessionId == sessionId {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    focusPoint = nil
+                }
             }
         }
     }
@@ -1164,6 +1200,61 @@ private struct ViewfinderGridOverlay: View {
         eyeCross.addLine(to: CGPoint(x: lastScreenPt.x, y: lastScreenPt.y + eyeArm))
         ctx.stroke(eyeCross, with: .color(Color.black.opacity(0.40)), lineWidth: 1.5)
         ctx.stroke(eyeCross, with: .color(RetroTheme.amber), lineWidth: 1.0)
+    }
+}
+
+// MARK: — Hardware Volume Button Shutter Handler
+
+private struct VolumeButtonShutterHandler: UIViewRepresentable {
+    let isEnabled: Bool
+    let onShutter: () -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
+        container.alpha = 0.01 // Suppresses system volume HUD
+        container.isUserInteractionEnabled = false
+
+        let volumeView = MPVolumeView(frame: container.bounds)
+        container.addSubview(volumeView)
+
+        context.coordinator.setup(onShutter: onShutter, isEnabled: isEnabled)
+        return container
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onShutter = onShutter
+        context.coordinator.isEnabled = isEnabled
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject {
+        var onShutter: (() -> Void)?
+        var isEnabled: Bool = true
+        private var observation: NSKeyValueObservation?
+        private var lastTriggerTime: TimeInterval = 0
+
+        func setup(onShutter: @escaping () -> Void, isEnabled: Bool) {
+            self.onShutter = onShutter
+            self.isEnabled = isEnabled
+            observation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] _, _ in
+                guard let self, self.isEnabled else { return }
+                let now = CACurrentMediaTime()
+                // Throttle triggers to prevent duplicate burst fires from holding volume rocker
+                guard now - self.lastTriggerTime > 0.35 else { return }
+                self.lastTriggerTime = now
+
+                DispatchQueue.main.async {
+                    self.onShutter?()
+                }
+            }
+        }
+
+        deinit {
+            observation?.invalidate()
+        }
     }
 }
 

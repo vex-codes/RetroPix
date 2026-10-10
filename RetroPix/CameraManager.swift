@@ -290,6 +290,33 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
     }
 
+    // MARK: — Tap to Focus & Exposure
+
+    /// Focuses and exposes at view coordinates by mapping to device sensor coordinates.
+    func focus(at viewPoint: CGPoint, in viewSize: CGSize) {
+        sessionQueue.async { [weak self] in
+            guard let self, let camera = self.currentCamera, viewSize.width > 0, viewSize.height > 0 else { return }
+            let nx = max(0.0, min(1.0, viewPoint.x / viewSize.width))
+            let ny = max(0.0, min(1.0, viewPoint.y / viewSize.height))
+            let devicePoint = self.isFrontCamera ? CGPoint(x: ny, y: nx) : CGPoint(x: ny, y: 1.0 - nx)
+
+            do {
+                try camera.lockForConfiguration()
+                if camera.isFocusPointOfInterestSupported && camera.isFocusModeSupported(.autoFocus) {
+                    camera.focusPointOfInterest = devicePoint
+                    camera.focusMode = .autoFocus
+                }
+                if camera.isExposurePointOfInterestSupported && camera.isExposureModeSupported(.autoExpose) {
+                    camera.exposurePointOfInterest = devicePoint
+                    camera.exposureMode = .autoExpose
+                }
+                camera.unlockForConfiguration()
+            } catch {
+                // Non-fatal lock failure
+            }
+        }
+    }
+
     // MARK: — Torch / Flash
 
     /// Toggles hardware torch on camera asynchronously on sessionQueue. Returns optimistic new torch state.
