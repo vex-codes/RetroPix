@@ -39,7 +39,9 @@ enum CaptureService {
         from renderer: MetalRenderer,
         orientation: DeviceOrientation = .portrait,
         dateStampMode: DateStampMode = .off,
-        frameBorderEnabled: Bool = false
+        frameBorderEnabled: Bool = false,
+        filmFrameStyle: FilmFrameStyle = .classicKeyline,
+        exposureCount: Int = 1
     ) async throws {
         guard await verifyPhotoPermission() else {
             throw PhotoCaptureError.permissionDenied
@@ -56,11 +58,6 @@ enum CaptureService {
         guard outW > 0, outH > 0 else { throw PhotoCaptureError.renderFailed }
 
         // 2. Map target dimensions and rotation from physical device orientation
-        // Target 4K UHD Ultra-High-Resolution Output (3840px long-edge master):
-        // 8-Bit mode: Exact integer multiplier (e.g. 15× or 16×) with .none interpolation
-        //             => razor-sharp 4K pixel art blocks, zero aliasing or subpixel blur
-        // Aesthetic mode: 3840px master with .high bicubic interpolation
-        //             => maximum sensor fidelity, creamy optical rolloff, full 4K output
         let maxOutputDim = max(outW, outH)
         let targetLongEdge: CGFloat = 3840.0
 
@@ -111,21 +108,33 @@ enum CaptureService {
         // Hard pixel edges for 8-bit, smooth bicubic for aesthetic analog
         ctx.interpolationQuality = isAesthetic ? .high : .none
 
-        let borderInset: CGFloat = frameBorderEnabled ? max(24.0, CGFloat(min(targetW, targetH)) * 0.045) : 0.0
+        let activeStyle: FilmFrameStyle = frameBorderEnabled ? filmFrameStyle : .off
+        let photoRect: CGRect
 
-        // Fill background with warm vintage photo-paper if border enabled
-        if frameBorderEnabled {
+        switch activeStyle {
+        case .off:
+            photoRect = CGRect(x: 0, y: 0, width: targetW, height: targetH)
+
+        case .classicKeyline:
+            let inset = max(24.0, CGFloat(min(targetW, targetH)) * 0.045)
             ctx.setFillColor(red: 0.96, green: 0.95, blue: 0.92, alpha: 1.0)
             ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
-        }
+            photoRect = CGRect(x: inset, y: inset, width: CGFloat(targetW) - inset * 2.0, height: CGFloat(targetH) - inset * 2.0)
 
-        // Draw pixel art photo
-        let photoRect = CGRect(
-            x: borderInset,
-            y: borderInset,
-            width: CGFloat(targetW) - borderInset * 2.0,
-            height: CGFloat(targetH) - borderInset * 2.0
-        )
+        case .sprocket35:
+            let rebateH = max(72.0, CGFloat(min(targetW, targetH)) * 0.088)
+            let rebateW = max(24.0, CGFloat(min(targetW, targetH)) * 0.032)
+            ctx.setFillColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1.0)
+            ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
+            photoRect = CGRect(x: rebateW, y: rebateH, width: CGFloat(targetW) - rebateW * 2.0, height: CGFloat(targetH) - rebateH * 2.0)
+
+        case .instantCard:
+            let margin = max(36.0, CGFloat(min(targetW, targetH)) * 0.052)
+            let bottomChin = margin * 2.6
+            ctx.setFillColor(red: 0.98, green: 0.97, blue: 0.95, alpha: 1.0)
+            ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
+            photoRect = CGRect(x: margin, y: bottomChin, width: CGFloat(targetW) - margin * 2.0, height: CGFloat(targetH) - margin - bottomChin)
+        }
 
         ctx.saveGState()
         if angle != 0 {
@@ -136,7 +145,7 @@ enum CaptureService {
             let drawWidth: CGFloat
             let drawHeight: CGFloat
 
-            if frameBorderEnabled {
+            if activeStyle != .off {
                 drawWidth  = isQuarterTurn ? photoRect.height : photoRect.width
                 drawHeight = isQuarterTurn ? photoRect.width : photoRect.height
             } else {
@@ -155,26 +164,15 @@ enum CaptureService {
         }
         ctx.restoreGState()
 
-        // Draw vintage border keyline & corner brackets
-        if frameBorderEnabled {
-            ctx.setStrokeColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 0.8)
-            ctx.setLineWidth(2.0)
-            ctx.stroke(photoRect)
-
-            let tickLen: CGFloat = 10.0
-            let corners = [
-                (photoRect.minX, photoRect.minY, 1.0, 1.0),
-                (photoRect.maxX, photoRect.minY, -1.0, 1.0),
-                (photoRect.minX, photoRect.maxY, 1.0, -1.0),
-                (photoRect.maxX, photoRect.maxY, -1.0, -1.0)
-            ]
-            for (cx, cy, dx, dy) in corners {
-                ctx.move(to: CGPoint(x: cx, y: cy + tickLen * dy))
-                ctx.addLine(to: CGPoint(x: cx, y: cy))
-                ctx.addLine(to: CGPoint(x: cx + tickLen * dx, y: cy))
-            }
-            ctx.strokePath()
-        }
+        // Draw vintage film frames & sprockets
+        FilmFrameRenderer.draw(
+            style: activeStyle,
+            targetW: targetW,
+            targetH: targetH,
+            photoRect: photoRect,
+            exposureCount: exposureCount,
+            in: ctx
+        )
 
         // 3. Draw authentic 7-segment quartz LED date/time stamp
         if dateStampMode != .off {
@@ -196,12 +194,12 @@ enum CaptureService {
                 ? UIColor(red: 1.0, green: 0.48, blue: 0.02, alpha: 0.98)
                 : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98)
 
-            let padX: CGFloat = frameBorderEnabled ? borderInset + 18.0 : max(24.0, CGFloat(targetW) * 0.035)
-            let padY: CGFloat = frameBorderEnabled ? borderInset + 18.0 : max(24.0, CGFloat(targetH) * 0.035)
+            let padX: CGFloat = max(20.0, photoRect.width * 0.035)
+            let padY: CGFloat = max(20.0, photoRect.height * 0.035)
 
             let origin = CGPoint(
-                x: CGFloat(targetW) - totalWidth - padX,
-                y: CGFloat(targetH) - digitHeight - padY
+                x: photoRect.maxX - totalWidth - padX,
+                y: CGFloat(targetH) - photoRect.minY - digitHeight - padY
             )
 
             QuartzDateStampRenderer.draw(
@@ -623,6 +621,104 @@ enum QuartzDateStampRenderer {
         ctx.addPath(path)
         ctx.fillPath()
         ctx.restoreGState()
+    }
+}
+
+// MARK: — Vintage Film Frame & Sprocket Renderer
+
+enum FilmFrameRenderer {
+    static func draw(
+        style: FilmFrameStyle,
+        targetW: Int,
+        targetH: Int,
+        photoRect: CGRect,
+        exposureCount: Int,
+        in ctx: CGContext
+    ) {
+        switch style {
+        case .off:
+            break
+
+        case .classicKeyline:
+            // Vintage photo-paper keyline & corner bracket marks
+            ctx.setStrokeColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 0.8)
+            ctx.setLineWidth(2.0)
+            ctx.stroke(photoRect)
+
+            let tickLen: CGFloat = 10.0
+            let corners = [
+                (photoRect.minX, photoRect.minY, 1.0, 1.0),
+                (photoRect.maxX, photoRect.minY, -1.0, 1.0),
+                (photoRect.minX, photoRect.maxY, 1.0, -1.0),
+                (photoRect.maxX, photoRect.maxY, -1.0, -1.0)
+            ]
+            for (cx, cy, dx, dy) in corners {
+                ctx.move(to: CGPoint(x: cx, y: cy + tickLen * dy))
+                ctx.addLine(to: CGPoint(x: cx, y: cy))
+                ctx.addLine(to: CGPoint(x: cx + tickLen * dx, y: cy))
+            }
+            ctx.strokePath()
+
+        case .sprocket35:
+            // Authentic 35mm negative sprocket perforations + DX edge rebate
+            let spkW: CGFloat = max(24.0, CGFloat(targetW) * 0.022)
+            let spkH: CGFloat = max(34.0, CGFloat(targetH) * 0.038)
+            let spkPitch: CGFloat = spkW * 2.1
+            let spkRadius: CGFloat = 4.0
+            let numSpk = Int(CGFloat(targetW) / spkPitch)
+
+            ctx.saveGState()
+            ctx.setFillColor(red: 0.03, green: 0.03, blue: 0.04, alpha: 1.0) // sprocket hole punch
+
+            let topSpkY = photoRect.maxY + (CGFloat(targetH) - photoRect.maxY - spkH) * 0.5
+            let botSpkY = (photoRect.minY - spkH) * 0.5
+
+            for i in 0..<numSpk {
+                let x = CGFloat(i) * spkPitch + (CGFloat(targetW) - CGFloat(numSpk - 1) * spkPitch - spkW) / 2.0
+                let topRect = CGRect(x: x, y: max(4.0, topSpkY), width: spkW, height: spkH)
+                let botRect = CGRect(x: x, y: max(4.0, botSpkY), width: spkW, height: spkH)
+
+                let topPath = CGPath(roundedRect: topRect, cornerWidth: spkRadius, cornerHeight: spkRadius, transform: nil)
+                let botPath = CGPath(roundedRect: botRect, cornerWidth: spkRadius, cornerHeight: spkRadius, transform: nil)
+                ctx.addPath(topPath)
+                ctx.addPath(botPath)
+            }
+            ctx.fillPath()
+
+            // DX Rebate Gold Barcode Ticks & Frame Number
+            ctx.setStrokeColor(red: 0.92, green: 0.62, blue: 0.12, alpha: 0.70)
+            ctx.setLineWidth(1.5)
+
+            // Barcode hash ticks along bottom rebate
+            let barStartX = photoRect.minX + 20.0
+            let barY = max(2.0, botSpkY - 8.0)
+            for b in 0..<16 {
+                let bx = barStartX + CGFloat(b) * 7.0
+                let h: CGFloat = (b % 3 == 0) ? 9.0 : 5.0
+                ctx.move(to: CGPoint(x: bx, y: barY))
+                ctx.addLine(to: CGPoint(x: bx, y: barY + h))
+            }
+            ctx.strokePath()
+
+            // Frame border inner keyline
+            ctx.setStrokeColor(red: 0.22, green: 0.22, blue: 0.26, alpha: 0.7)
+            ctx.setLineWidth(1.5)
+            ctx.stroke(photoRect)
+            ctx.restoreGState()
+
+        case .instantCard:
+            // Polaroid / Instax photo frame keyline & card drop-shadow
+            ctx.saveGState()
+            ctx.setStrokeColor(red: 0.86, green: 0.84, blue: 0.80, alpha: 0.95)
+            ctx.setLineWidth(2.0)
+            ctx.stroke(photoRect)
+
+            // Inner dark frame line around emulsion
+            ctx.setStrokeColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 0.45)
+            ctx.setLineWidth(1.0)
+            ctx.stroke(photoRect.insetBy(dx: 1.0, dy: 1.0))
+            ctx.restoreGState()
+        }
     }
 }
 

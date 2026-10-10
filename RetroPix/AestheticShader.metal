@@ -180,6 +180,21 @@ kernel void aestheticKernel(
     float nx = (float(gid.x) + 0.5) / float(u.outputSize.x);
     float ny = (float(gid.y) + 0.5) / float(u.outputSize.y);
     bool isFront = (u.shadowTint.w > 0.5);
+
+    // Lens: barrel distortion / fisheye accessory
+    float barrel = u.m1.w;
+    if (barrel > 0.0) {
+        float2 centered = float2(nx - 0.5, ny - 0.5);
+        float r2 = dot(centered, centered);
+        float f = 1.0 + barrel * r2 * 2.2;
+        nx = 0.5 + centered.x * f;
+        ny = 0.5 + centered.y * f;
+        if (nx < 0.0 || nx > 1.0 || ny < 0.0 || ny > 1.0) {
+            outTexture.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+            return;
+        }
+    }
+
     float2 uv = cameraUV(nx, ny, u.cropUV, isFront);
     float  r  = length(float2(nx, ny) * 2.0 - 1.0) * 0.70710678;   // 0 centre → 1 corner
 
@@ -238,6 +253,29 @@ kernel void aestheticKernel(
 
     // Vignette: I·(1 − k·r^2.5)
     g *= 1.0 - u.fx2.x * pow(r, 2.5);
+
+    // Direct flash point-source falloff & warm skin specular bloom
+    float flashActive = u.highlightTint.w;
+    if (flashActive > 0.0) {
+        float falloff = 1.0 - 0.35 * flashActive * smoothstep(0.18, 0.95, r);
+        g *= falloff;
+        float spec = smoothstep(0.68, 0.98, luma(g)) * flashActive;
+        g += float3(0.08, 0.045, 0.01) * spec;
+    }
+
+    // Procedural warm film light leak / edge burn
+    float leakStrength = u.m0.w;
+    if (leakStrength > 0.0) {
+        float lkSeed = fract(u.seed * 0.00137 + 0.17);
+        float2 lkOrigin = (lkSeed > 0.5)
+            ? float2(0.02, 0.15 + 0.7 * lkSeed)
+            : float2(0.98, 0.85 - 0.7 * lkSeed);
+        float dLk = distance(float2(nx, ny), lkOrigin);
+        float lkNoise = 0.5 + 0.5 * valueNoise(float2(nx, ny) * 3.5, uint(u.seed) + 42u);
+        float lkMask = smoothstep(0.65, 0.0, dLk) * lkNoise * leakStrength;
+        float3 lkColor = float3(1.0, 0.38, 0.06);
+        g = 1.0 - (1.0 - g) * (1.0 - lkColor * lkMask);
+    }
 
     // Film grain: two octaves of correlated noise, peaks in midtones, extra in shadows, fades in highlights (§6.3.2)
     float Lg = saturate(luma(g));

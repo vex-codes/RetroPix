@@ -74,6 +74,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     var ditherSpread: Float = 0.50
     var ditherAlgorithm: UInt32 = 0
 
+    // MARK: — Dazz Cam Optical FX
+
+    var isFlashActive: Bool = false
+    var lightLeakStrength: Float = 0.0
+    var barrelDistortion: Float = 0.0
+
     // MARK: — Viewport scale (letterbox)
 
     private var viewportScale = SIMD2<Float>(1, 1)
@@ -336,7 +342,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                 outputWidth: outputWidth,
                 outputHeight: outputHeight,
                 seed: frameSeed,
-                isFrontCamera: isFrontCamera
+                isFrontCamera: isFrontCamera,
+                isFlashActive: isFlashActive,
+                lightLeakStrength: lightLeakStrength,
+                barrelDistortion: barrelDistortion
             )
             aestheticUniformBuffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<AestheticUniforms>.stride)
 

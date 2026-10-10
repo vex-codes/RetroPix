@@ -122,24 +122,107 @@ struct CameraSettingsView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 12)
 
-                        // Frame Borders Toggle
-                        Toggle(isOn: Binding(
-                            get: { vm.frameBorderEnabled },
-                            set: {
-                                vm.frameBorderEnabled = $0
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        // Film Frame & Borders Style Picker
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("FILM FRAMES & BORDERS")
+                                .font(RetroTheme.mono(10))
+                                .foregroundStyle(RetroTheme.dimText)
+
+                            HStack(spacing: 8) {
+                                ForEach(FilmFrameStyle.allCases) { style in
+                                    Button {
+                                        vm.filmFrameStyle = style
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    } label: {
+                                        Text(style.displayLabel)
+                                            .font(RetroTheme.mono(10))
+                                            .foregroundStyle(vm.filmFrameStyle == style ? RetroTheme.bg : RetroTheme.green)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(vm.filmFrameStyle == style ? RetroTheme.green : Color.clear)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .stroke(RetroTheme.green.opacity(0.6), lineWidth: 1)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                        )) {
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+
+                        // Optical Lenses & Vintage FX
+                        VStack(spacing: 10) {
+                            Toggle(isOn: Binding(
+                                get: { vm.isLightLeakEnabled },
+                                set: {
+                                    vm.isLightLeakEnabled = $0
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("LIGHT LEAK / FILM BURN")
+                                        .font(RetroTheme.mono(11))
+                                        .foregroundStyle(vm.isLightLeakEnabled ? RetroTheme.amber : RetroTheme.text)
+                                    Text("Warm organic edge light exposure streaks")
+                                        .font(RetroTheme.mono(8, weight: .regular))
+                                        .foregroundStyle(RetroTheme.dimText)
+                                }
+                            }
+                            .tint(RetroTheme.amber)
+
+                            Toggle(isOn: Binding(
+                                get: { vm.isFisheyeEnabled },
+                                set: {
+                                    vm.isFisheyeEnabled = $0
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("FISHEYE / BARREL LENS")
+                                        .font(RetroTheme.mono(11))
+                                        .foregroundStyle(vm.isFisheyeEnabled ? RetroTheme.green : RetroTheme.text)
+                                    Text("Curved wide-angle toy camera perspective")
+                                        .font(RetroTheme.mono(8, weight: .regular))
+                                        .foregroundStyle(RetroTheme.dimText)
+                                }
+                            }
+                            .tint(RetroTheme.green)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+
+                        // Film Roll Exposure Counter
+                        HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("FRAME BORDERS")
+                                Text("ANALOG FILM ROLL")
                                     .font(RetroTheme.mono(11))
-                                    .foregroundStyle(vm.frameBorderEnabled ? RetroTheme.green : RetroTheme.text)
-                                Text("Vintage photo paper margin & corner ticks")
+                                    .foregroundStyle(RetroTheme.text)
+                                Text("Frame counter: EXP \(String(format: "%02d", vm.exposureCount)) / 36")
                                     .font(RetroTheme.mono(8, weight: .regular))
                                     .foregroundStyle(RetroTheme.dimText)
                             }
+                            Spacer()
+                            Button {
+                                vm.exposureCount = 1
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            } label: {
+                                Text("RELOAD ROLL")
+                                    .font(RetroTheme.mono(9, weight: .bold))
+                                    .foregroundStyle(RetroTheme.amber)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .stroke(RetroTheme.amber.opacity(0.6), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .tint(RetroTheme.green)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 12)
 

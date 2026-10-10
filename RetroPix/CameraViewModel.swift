@@ -37,6 +37,24 @@ enum GridMode: String, CaseIterable, Identifiable, Codable {
     var displayLabel: String { rawValue }
 }
 
+public enum FilmFrameStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case off = "OFF"
+    case classicKeyline = "KEYLINE"
+    case sprocket35 = "35MM SPROCKET"
+    case instantCard = "INSTANT CARD"
+
+    public var id: String { rawValue }
+
+    public var displayLabel: String {
+        switch self {
+        case .off: return "OFF"
+        case .classicKeyline: return "KEYLINE"
+        case .sprocket35: return "35MM"
+        case .instantCard: return "INSTANT"
+        }
+    }
+}
+
 enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
     case bayer8 = "BAYER 8×8"
     case blueNoise = "BLUE NOISE"
@@ -199,6 +217,40 @@ final class CameraViewModel {
         }
     }
 
+    var filmFrameStyle: FilmFrameStyle = {
+        if let saved = UserDefaults.standard.string(forKey: "filmFrameStyle"),
+           let style = FilmFrameStyle(rawValue: saved) {
+            return style
+        }
+        return .sprocket35
+    }() {
+        didSet {
+            UserDefaults.standard.set(filmFrameStyle.rawValue, forKey: "filmFrameStyle")
+            frameBorderEnabled = (filmFrameStyle != .off)
+        }
+    }
+
+    var isLightLeakEnabled: Bool = UserDefaults.standard.bool(forKey: "isLightLeakEnabled") {
+        didSet {
+            UserDefaults.standard.set(isLightLeakEnabled, forKey: "isLightLeakEnabled")
+        }
+    }
+
+    var isFisheyeEnabled: Bool = UserDefaults.standard.bool(forKey: "isFisheyeEnabled") {
+        didSet {
+            UserDefaults.standard.set(isFisheyeEnabled, forKey: "isFisheyeEnabled")
+        }
+    }
+
+    var exposureCount: Int = {
+        let val = UserDefaults.standard.integer(forKey: "exposureCount")
+        return val > 0 ? val : 1
+    }() {
+        didSet {
+            UserDefaults.standard.set(exposureCount, forKey: "exposureCount")
+        }
+    }
+
     var frameBorderEnabled: Bool = UserDefaults.standard.object(forKey: "frameBorderEnabled") as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(frameBorderEnabled, forKey: "frameBorderEnabled")
@@ -286,6 +338,13 @@ final class CameraViewModel {
         let count = palettes.count
         guard count > 0 else { return }
         activePaletteIndex = (activePaletteIndex + (forward ? 1 : count - 1)) % count
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    func cycleAestheticProfile(forward: Bool) {
+        let count = aestheticProfiles.count
+        guard count > 0 else { return }
+        activeAestheticProfileIndex = (activeAestheticProfileIndex + (forward ? 1 : count - 1)) % count
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
@@ -415,11 +474,37 @@ final class CameraViewModel {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    /// Cycles active aesthetic camera profile / film simulation.
-    func cycleAestheticProfile(forward: Bool) {
-        let count = aestheticProfiles.count
-        guard count > 0 else { return }
-        activeAestheticProfileIndex = (activeAestheticProfileIndex + (forward ? 1 : count - 1)) % count
+    /// Advances mechanical film exposure counter (1..36)
+    func advanceFilm() {
+        if exposureCount >= 36 {
+            exposureCount = 1
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } else {
+            exposureCount += 1
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        }
+    }
+
+    /// Cycles film frame style: OFF → KEYLINE → 35MM SPROCKET → INSTANT CARD
+    func cycleFilmFrameStyle() {
+        let all = FilmFrameStyle.allCases
+        if let idx = all.firstIndex(of: filmFrameStyle) {
+            filmFrameStyle = all[(idx + 1) % all.count]
+        } else {
+            filmFrameStyle = .sprocket35
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Toggles light leak / film burn simulation
+    func toggleLightLeak() {
+        isLightLeakEnabled.toggle()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Toggles fisheye / barrel distortion lens accessory
+    func toggleFisheye() {
+        isFisheyeEnabled.toggle()
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

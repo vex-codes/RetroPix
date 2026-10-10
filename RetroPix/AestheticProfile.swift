@@ -129,7 +129,10 @@ public struct AestheticProfile: Identifiable, Equatable, Codable {
         outputWidth: Int,
         outputHeight: Int,
         seed: Float,
-        isFrontCamera: Bool = false
+        isFrontCamera: Bool = false,
+        isFlashActive: Bool = false,
+        lightLeakStrength: Float = 0.0,
+        barrelDistortion: Float = 0.0
     ) -> AestheticUniforms {
         let ck = curveKnots.count >= 5 ? curveKnots : [0.0, 0.25, 0.50, 0.75, 1.0]
         let h = hueDeltas.count >= 8 ? hueDeltas : Array(repeating: 0.0, count: 8)
@@ -155,9 +158,9 @@ public struct AestheticProfile: Identifiable, Equatable, Codable {
             lumB: SIMD4<Float>(l[4], l[5], l[6], l[7]),
             wbGain: SIMD4<Float>(wb[0], wb[1], wb[2], globalSaturation),
             shadowTint: SIMD4<Float>(st[0], st[1], st[2], isFrontCamera ? 1.0 : 0.0),
-            highlightTint: SIMD4<Float>(ht[0], ht[1], ht[2], 0.0),
-            m0: SIMD4<Float>(m[0], m[1], m[2], 0.0),
-            m1: SIMD4<Float>(m[3], m[4], m[5], 0.0),
+            highlightTint: SIMD4<Float>(ht[0], ht[1], ht[2], isFlashActive ? 1.0 : 0.0),
+            m0: SIMD4<Float>(m[0], m[1], m[2], lightLeakStrength),
+            m1: SIMD4<Float>(m[3], m[4], m[5], barrelDistortion),
             m2: SIMD4<Float>(m[6], m[7], m[8], 0.0),
             fx: SIMD4<Float>(grainAmount, grainSize, halationStrength, halationThreshold),
             fx2: SIMD4<Float>(vignette, opticalSoftness, chromaticAberration, chromaNoise),
@@ -560,6 +563,60 @@ extension AestheticProfile {
         chromaNoise: 0.0
     )
 
+    /// 15. Contax T2 ("Zeiss Sonnar T* 38mm f/2.8 Luxury Compact")
+    public static let contaxT2 = AestheticProfile(
+        id: "contax_t2",
+        name: "CONTAX T2",
+        code: "T2-ZEISS",
+        subtitle: "Zeiss Sonnar T* / Micro-Contrast / Slate-Cyan Shadows",
+        category: .analogStock,
+        eraYear: "'90",
+        curveKnots: [0.015, 0.210, 0.495, 0.770, 0.985],
+        highlightRolloff: 0.28,
+        hueDeltas: [1.0, 3.0, -4.0, -12.0, 8.0, 5.0, 0.0, -2.0],
+        satDeltas: [0.10, 0.08, 0.05, -0.10, -0.05, 0.04, 0.0, 0.0],
+        lumDeltas: [0.03, 0.05, 0.02, -0.05, -0.02, -0.06, 0.0, 0.0],
+        wbRGB: [0.99, 1.00, 1.02],
+        globalSaturation: 1.04,
+        shadowTintRGB: [0.005, 0.016, 0.028],
+        highlightTintRGB: [0.025, 0.018, 0.006],
+        grainAmount: 0.18,
+        grainSize: 1.1,
+        halationStrength: 0.28,
+        halationThreshold: 0.80,
+        vignette: 0.22,
+        opticalSoftness: -0.15, // crisp Zeiss micro-contrast
+        chromaticAberration: 0.0004,
+        chromaNoise: 0.0
+    )
+
+    /// 16. Sony Mavica FD73 ("1998 Y2K Floppy Disk Digicam")
+    public static let sonyMavica = AestheticProfile(
+        id: "sony_mavica",
+        name: "SONY MAVICA",
+        code: "FD-73",
+        subtitle: "3.5\" Floppy Disk Lo-Fi / Harsh Edge Ringing / Y2K Gamut",
+        category: .digicam,
+        eraYear: "'98",
+        curveKnots: [0.000, 0.170, 0.500, 0.850, 1.000],
+        highlightRolloff: 0.0,
+        hueDeltas: [-2.0, 0.0, 2.0, -6.0, 5.0, 8.0, 0.0, -3.0],
+        satDeltas: [0.20, 0.14, 0.22, 0.18, 0.20, 0.35, 0.10, 0.10],
+        lumDeltas: [0.0, 0.04, 0.0, -0.04, -0.04, -0.08, 0.0, 0.0],
+        wbRGB: [1.06, 1.01, 0.95],
+        globalSaturation: 1.18,
+        shadowTintRGB: [0.020, 0.005, 0.035],
+        highlightTintRGB: [0.025, 0.018, 0.002],
+        grainAmount: 0.12,
+        grainSize: 1.0,
+        halationStrength: 0.15,
+        halationThreshold: 0.86,
+        vignette: 0.18,
+        opticalSoftness: -0.55, // crunchy early digital sharpening
+        chromaticAberration: 0.0035,
+        chromaNoise: 0.60       // prominent shadow chroma noise
+    )
+
     public static let allBuiltIn: [AestheticProfile] = [
         .canonG7X,
         .kodakPixpro,
@@ -574,7 +631,9 @@ extension AestheticProfile {
         .olympusMjuII,
         .fujiSuperia400,
         .dazzCPM35,
-        .polaroid600
+        .polaroid600,
+        .contaxT2,
+        .sonyMavica
     ]
 }
 

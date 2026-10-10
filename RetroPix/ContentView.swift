@@ -178,6 +178,15 @@ struct ContentView: View {
         .onChange(of: vm.zoomFactor) { _, newZoom in
             cameraManager.setZoom(newZoom)
         }
+        .onChange(of: vm.isLightLeakEnabled) { _, new in
+            renderer?.lightLeakStrength = new ? 0.75 : 0.0
+        }
+        .onChange(of: vm.isFisheyeEnabled) { _, new in
+            renderer?.barrelDistortion = new ? 0.22 : 0.0
+        }
+        .onChange(of: vm.isFlashOn) { _, new in
+            renderer?.isFlashActive = new
+        }
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(vm: vm)
         }
@@ -228,6 +237,9 @@ struct ContentView: View {
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
         renderer?.ditherAlgorithm = vm.ditherAlgorithm.rawIndex
+        renderer?.isFlashActive = vm.isFlashOn
+        renderer?.lightLeakStrength = vm.isLightLeakEnabled ? 0.75 : 0.0
+        renderer?.barrelDistortion = vm.isFisheyeEnabled ? 0.22 : 0.0
     }
 
     // MARK: — Shutter & Timer Handling
@@ -312,8 +324,11 @@ struct ContentView: View {
                         from: renderer,
                         orientation: orientationObserver.orientation,
                         dateStampMode: vm.dateStampMode,
-                        frameBorderEnabled: vm.frameBorderEnabled
+                        frameBorderEnabled: vm.frameBorderEnabled,
+                        filmFrameStyle: vm.filmFrameStyle,
+                        exposureCount: vm.exposureCount
                     )
+                    vm.advanceFilm()
                 }
             }
         } else {
@@ -335,8 +350,11 @@ struct ContentView: View {
                     from: renderer,
                     orientation: orientationObserver.orientation,
                     dateStampMode: vm.dateStampMode,
-                    frameBorderEnabled: vm.frameBorderEnabled
+                    frameBorderEnabled: vm.frameBorderEnabled,
+                    filmFrameStyle: vm.filmFrameStyle,
+                    exposureCount: vm.exposureCount
                 )
+                vm.advanceFilm()
             }
         }
     }
@@ -346,7 +364,7 @@ struct ContentView: View {
 
 private struct TopOSDBar: View {
     var vm: CameraViewModel
-    let onMenu: () -> Void
+    var onMenu: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -433,7 +451,7 @@ private struct PortraitDeck: View {
 
                 let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
                 let sensorStr = vm.engineMode == .pixel8Bit ? "BAYER SENSOR" : "CCD MATRIX"
-                Text("\(zoomStr)\(sensorStr)")
+                Text("\(zoomStr)\(sensorStr)  EXP \(String(format: "%02d", vm.exposureCount))/36")
                     .font(RetroTheme.mono(8, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
@@ -762,6 +780,7 @@ private struct CountdownOSDOverlay: View {
 final class ShutterAudioService: @unchecked Sendable {
     static let shared = ShutterAudioService()
     private var shutterPlayer: AVAudioPlayer?
+    private var motorPlayer: AVAudioPlayer?
     private var normalBeepPlayer: AVAudioPlayer?
     private var urgentBeepPlayer: AVAudioPlayer?
 
@@ -773,6 +792,10 @@ final class ShutterAudioService: @unchecked Sendable {
         shutterPlayer = try? AVAudioPlayer(data: wav)
         shutterPlayer?.prepareToPlay()
 
+        let motorWav = createMotorWindingWav()
+        motorPlayer = try? AVAudioPlayer(data: motorWav)
+        motorPlayer?.prepareToPlay()
+
         let normalWav = createToneWav(freq: 1200.0, duration: 0.05)
         normalBeepPlayer = try? AVAudioPlayer(data: normalWav)
         normalBeepPlayer?.prepareToPlay()
@@ -782,12 +805,20 @@ final class ShutterAudioService: @unchecked Sendable {
         urgentBeepPlayer?.prepareToPlay()
     }
 
-    func play() {
+    func play(withMotorWinding: Bool = true) {
         if let shutterPlayer {
             shutterPlayer.currentTime = 0
             shutterPlayer.play()
         }
         AudioServicesPlaySystemSound(1108)
+
+        if withMotorWinding {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { [weak self] in
+                guard let self, let p = self.motorPlayer else { return }
+                p.currentTime = 0
+                p.play()
+            }
+        }
     }
 
     func playBeep(urgent: Bool = false) {
@@ -861,6 +892,48 @@ final class ShutterAudioService: @unchecked Sendable {
                 s += (sin(2.0 * .pi * freq * dt) + noise) * decay * 0.9
             }
             s = max(-1.0, min(1.0, s))
+            samples[i] = Int16(s * 32767.0)
+        }
+
+        var data = Data()
+        data.append(contentsOf: [UInt8]("RIFF".utf8))
+        let fileSize = Int32(36 + numSamples * 2)
+        withUnsafeBytes(of: fileSize.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("WAVEfmt ".utf8))
+        let subchunk1Size: Int32 = 16
+        withUnsafeBytes(of: subchunk1Size.littleEndian) { data.append(contentsOf: $0) }
+        let audioFormat: Int16 = 1
+        withUnsafeBytes(of: audioFormat.littleEndian) { data.append(contentsOf: $0) }
+        let numChannels: Int16 = 1
+        withUnsafeBytes(of: numChannels.littleEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: sampleRate.littleEndian) { data.append(contentsOf: $0) }
+        let byteRate = sampleRate * 2
+        withUnsafeBytes(of: byteRate.littleEndian) { data.append(contentsOf: $0) }
+        let blockAlign: Int16 = 2
+        withUnsafeBytes(of: blockAlign.littleEndian) { data.append(contentsOf: $0) }
+        let bitsPerSample: Int16 = 16
+        withUnsafeBytes(of: bitsPerSample.littleEndian) { data.append(contentsOf: $0) }
+        data.append(contentsOf: [UInt8]("data".utf8))
+        let dataSize = Int32(numSamples * 2)
+        withUnsafeBytes(of: dataSize.littleEndian) { data.append(contentsOf: $0) }
+        samples.withUnsafeBytes { data.append(contentsOf: $0) }
+        return data
+    }
+
+    private func createMotorWindingWav() -> Data {
+        let sampleRate: Int32 = 44100
+        let duration: Double = 0.16
+        let numSamples = Int(Double(sampleRate) * duration)
+        var samples = [Int16](repeating: 0, count: numSamples)
+
+        for i in 0..<numSamples {
+            let t = Double(i) / Double(sampleRate)
+            let motorFreq = 220.0 + 35.0 * sin(2.0 * .pi * 28.0 * t)
+            let buzz = sin(2.0 * .pi * motorFreq * t)
+            let gearClick = (i % 600 < 30) ? 0.35 : 0.0
+            let noise = Double.random(in: -0.2...0.2)
+            let env = sin(.pi * (t / duration))
+            let s = max(-1.0, min(1.0, (buzz + gearClick + noise) * env * 0.45))
             samples[i] = Int16(s * 32767.0)
         }
 
