@@ -4,15 +4,10 @@
 
 import SwiftUI
 
-struct PaletteEditorTarget: Identifiable {
-    let id: String
-    let palette: Palette?
-}
-
 struct CameraSettingsView: View {
     var vm: CameraViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var editorTarget: PaletteEditorTarget? = nil
+    @State private var editingPaletteID: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -299,7 +294,7 @@ struct CameraSettingsView: View {
                                 .buttonStyle(.plain)
 
                                 Button {
-                                    editorTarget = PaletteEditorTarget(id: "new_\(UUID().uuidString)", palette: nil)
+                                    editingPaletteID = "NEW_\(UUID().uuidString)"
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 } label: {
                                     Text("[ + CUSTOM STUDIO ]")
@@ -337,7 +332,7 @@ struct CameraSettingsView: View {
                                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                         },
                                         onEdit: {
-                                            editorTarget = PaletteEditorTarget(id: palette.id, palette: palette)
+                                            editingPaletteID = palette.id
                                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                         },
                                         onDelete: {
@@ -394,9 +389,12 @@ struct CameraSettingsView: View {
                         .foregroundStyle(RetroTheme.red)
                 }
             }
-            .sheet(item: $editorTarget) { target in
-                CustomPaletteEditorView(vm: vm, paletteToEdit: target.palette)
-                    .id(target.id)
+            .sheet(isPresented: Binding(
+                get: { editingPaletteID != nil },
+                set: { if !$0 { editingPaletteID = nil } }
+            )) {
+                let palette = editingPaletteID?.hasPrefix("NEW_") == true ? nil : vm.palettes.first(where: { $0.id == editingPaletteID })
+                CustomPaletteEditorView(vm: vm, paletteToEdit: palette)
             }
         }
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)

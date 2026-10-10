@@ -174,16 +174,6 @@ final class CameraViewModel {
         }
     }
 
-    func lockToFrontCamera() {
-        setFrontCamera(true)
-    }
-
-    func unlockFromFrontCamera() {
-        setFrontCamera(false)
-    }
-
-    var isPortrait: Bool = false
-    var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
     // Pinch-to-zoom state
     var zoomFactor: CGFloat = 1.0

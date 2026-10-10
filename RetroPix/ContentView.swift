@@ -107,8 +107,6 @@ struct ContentView: View {
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(vm.isDarkMode ? .dark : .light)
         .onAppear {
-            vm.isPortrait = true
-            vm.orientation = 1
             orientationObserver.start()
             setupRenderer()
             DispatchQueue.global(qos: .utility).async {
@@ -956,10 +954,14 @@ private struct ViewfinderQuartzDateStamp: View {
         }
     }
 
+    private static let stampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "''yy MM dd  HH:mm"
+        return f
+    }()
+
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "''yy MM dd  HH:mm"
-        return formatter.string(from: date)
+        Self.stampFormatter.string(from: date)
     }
 }
 
