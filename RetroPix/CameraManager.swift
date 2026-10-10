@@ -19,6 +19,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     nonisolated(unsafe) private(set) var isTorchOn: Bool = false
     nonisolated(unsafe) private(set) var hasTorch: Bool = true
+    nonisolated(unsafe) private var isSwitching: Bool = false
     var isFrontCamera: Bool = false
     private var currentPosition: AVCaptureDevice.Position = .back
 
@@ -168,7 +169,17 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
             // If torch is on, turn it off before switching
             if self.isTorchOn {
-                self.setTorch(false)
+                self.isTorchOn = false
+                if let camera = self.currentCamera, camera.hasTorch {
+                    try? camera.lockForConfiguration()
+                    camera.torchMode = .off
+                    camera.unlockForConfiguration()
+                }
+            }
+
+            self.isSwitching = true
+            self.textureLock.withLock {
+                self._cameraTexture = nil
             }
 
             session.beginConfiguration()
@@ -189,6 +200,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
                     session.addInput(fallbackInput)
                 }
                 session.commitConfiguration()
+                self.isSwitching = false
                 let actualFront = (self.currentPosition == .front)
                 DispatchQueue.main.async {
                     self.isFrontCamera = actualFront
@@ -230,6 +242,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
             self.currentCamera = newCamera
             self.currentPosition = targetPosition
+            self.isSwitching = false
             let torchAvail = newCamera.hasTorch
             let isFront = (targetPosition == .front)
             DispatchQueue.main.async {
@@ -341,6 +354,8 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        if isSwitching { return }
+
         guard
             let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
             let cache = textureCache

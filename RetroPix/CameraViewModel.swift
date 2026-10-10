@@ -158,8 +158,11 @@ final class CameraViewModel {
         if front {
             rearCameraRatio = activeRatio
             activeRatio = .ratio4_3
+            hasTorch = false
+            isFlashOn = false
         } else {
             activeRatio = rearCameraRatio
+            hasTorch = true
         }
     }
 
@@ -210,6 +213,7 @@ final class CameraViewModel {
         }
     }
 
+    var hasTorch: Bool = true
     var isFlashOn: Bool = false
 
     var activePalette: Palette {

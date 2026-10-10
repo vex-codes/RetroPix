@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var orientationObserver = DeviceOrientationObserver()
     @State private var countdownRemaining: Int? = nil
     @State private var countdownTask: Task<Void, Never>? = nil
+    @State private var isSwitchingCamera: Bool = false
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -51,6 +52,11 @@ struct ContentView: View {
                             if let count = countdownRemaining {
                                 CountdownOSDOverlay(remaining: count, rotation: rotation)
                             }
+
+                            // Smooth blackout transition during camera switch to eliminate single-frame warp/flip glitches
+                            Color.black
+                                .opacity(isSwitchingCamera ? 1.0 : 0.0)
+                                .animation(.easeInOut(duration: 0.12), value: isSwitchingCamera)
                         }
                         .aspectRatio(aspect, contentMode: .fit)
                         .clipped()
@@ -179,19 +185,30 @@ struct ContentView: View {
               let device = MTLCreateSystemDefaultDevice() else { return }
         cameraManager.setup(device: device)
         renderer = MetalRenderer(device: device, cameraManager: cameraManager)
+        vm.hasTorch = !vm.isFrontCamera && cameraManager.hasTorch
         updateRendererConfig()
     }
 
     private func handleCameraSwitch() {
+        guard !isSwitchingCamera else { return }
+        isSwitchingCamera = true
         vm.toggleCamera()
         cameraManager.isFrontCamera = vm.isFrontCamera
-        updateRendererConfig()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         cameraManager.switchCamera(toFront: vm.isFrontCamera) { actualFront in
+            vm.hasTorch = actualFront ? false : cameraManager.hasTorch
+            if actualFront {
+                vm.isFlashOn = false
+            }
             if actualFront != vm.isFrontCamera {
                 vm.setFrontCamera(actualFront)
-                cameraManager.isFrontCamera = actualFront
-                updateRendererConfig()
+            }
+            cameraManager.isFrontCamera = actualFront
+            updateRendererConfig()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isSwitchingCamera = false
+                }
             }
         }
     }
@@ -431,9 +448,10 @@ private struct PortraitDeck: View {
                 // Flash Toggle (Left)
                 FlashButton(
                     isFlashOn: vm.isFlashOn,
-                    isEnabled: cameraManager.hasTorch,
+                    isEnabled: vm.hasTorch,
                     rotation: rotation
                 ) {
+                    guard vm.hasTorch else { return }
                     let state = cameraManager.toggleTorch()
                     vm.isFlashOn = state
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
