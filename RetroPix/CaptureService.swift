@@ -56,31 +56,44 @@ enum CaptureService {
         guard outW > 0, outH > 0 else { throw PhotoCaptureError.renderFailed }
 
         // 2. Map target dimensions and rotation from physical device orientation
-        // 8-Bit mode: 8× upscale with .none interpolation (hard pixel edges)
-        // Aesthetic mode: 2× upscale with .high interpolation (smooth film grain & optical rolloff)
-        let scale = isAesthetic ? 2 : 8
+        // Target 4K UHD Ultra-High-Resolution Output (3840px long-edge master):
+        // 8-Bit mode: Exact integer multiplier (e.g. 15× or 16×) with .none interpolation
+        //             => razor-sharp 4K pixel art blocks, zero aliasing or subpixel blur
+        // Aesthetic mode: 3840px master with .high bicubic interpolation
+        //             => maximum sensor fidelity, creamy optical rolloff, full 4K output
+        let maxOutputDim = max(outW, outH)
+        let targetLongEdge: CGFloat = 3840.0
+
+        let scale: CGFloat
+        if isAesthetic {
+            scale = max(2.0, targetLongEdge / CGFloat(maxOutputDim))
+        } else {
+            scale = CGFloat(max(1, Int(round(targetLongEdge / CGFloat(maxOutputDim)))))
+        }
+
+        let drawW = Int(round(CGFloat(outW) * scale))
+        let drawH = Int(round(CGFloat(outH) * scale))
+
         let targetW: Int
         let targetH: Int
         let angle: CGFloat
-        let drawW = outW * scale
-        let drawH = outH * scale
 
         switch orientation {
         case .landscapeLeft:
-            targetW = outH * scale
-            targetH = outW * scale
+            targetW = drawH
+            targetH = drawW
             angle = .pi / 2.0
         case .landscapeRight:
-            targetW = outH * scale
-            targetH = outW * scale
+            targetW = drawH
+            targetH = drawW
             angle = -.pi / 2.0
         case .portraitUpsideDown:
-            targetW = outW * scale
-            targetH = outH * scale
+            targetW = drawW
+            targetH = drawH
             angle = .pi
         case .portrait:
-            targetW = outW * scale
-            targetH = outH * scale
+            targetW = drawW
+            targetH = drawH
             angle = 0
         }
 

@@ -208,6 +208,37 @@ struct FlashButton: View {
     }
 }
 
+// MARK: — Camera Flip Button (Right of Shutter)
+
+struct CameraFlipButton: View {
+    let isFront: Bool
+    var rotation: Double = 0.0
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(RetroTheme.panel)
+                    .overlay(
+                        Circle().stroke(
+                            isFront ? RetroTheme.green : RetroTheme.border,
+                            lineWidth: isFront ? 1.5 : 1.0
+                        )
+                    )
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "camera.rotate.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(isFront ? RetroTheme.green : RetroTheme.dimText)
+                    .rotationEffect(.degrees(rotation))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFront ? "Front Camera Active" : "Back Camera Active")
+    }
+}
+
 // MARK: — Self-Timer Quick Button
 
 struct TimerButton: View {

@@ -24,27 +24,39 @@ enum AspectRatio: String, CaseIterable, Identifiable, Codable {
     /// Full-resolution render target for AESTHETIC (Digicam/Film) mode
     var aestheticOutputSize: (w: Int, h: Int) {
         switch self {
-        case .ratio2_1:  return (640, 1280)
-        case .ratio1_1:  return (720, 720)
-        case .ratio4_3:  return (720, 960)
-        case .ratio16_9: return (720, 1280)
+        case .ratio2_1:  return (960, 1920)
+        case .ratio1_1:  return (1080, 1080)
+        case .ratio4_3:  return (1080, 1440)
+        case .ratio16_9: return (1080, 1920)
         }
     }
 
-    /// Crop UV bounds (u0, v0, u1, v1) for 1280×720 camera buffer
+    /// Crop UV bounds (u0, v0, u1, v1) for 16:9 camera buffer (normalized [0, 1])
     var cropUV: SIMD4<Float> {
+        cropUV(isFrontCamera: false)
+    }
+
+    /// Front-camera aware crop bounds.
+    /// On iPhone, front sensor is mounted 180° physically inverted and requires horizontal mirroring for natural selfie framing.
+    func cropUV(isFrontCamera: Bool) -> SIMD4<Float> {
+        if isFrontCamera {
+            // Front camera locked to 4:3 (3/4 of 16:9 buffer width => 0.125 to 0.875 u bounds).
+            // Vertical u inverted (0.875 -> 0.125) + horizontal v mirrored (1.0 -> 0.0).
+            return SIMD4<Float>(0.875, 1.0, 0.125, 0.0)
+        }
+
         switch self {
         case .ratio2_1:
-            // 1280×640 on 1280×720 -> v margin 40px
+            // 2:1 crop inside 16:9 buffer
             return SIMD4<Float>(0.0, 40.0 / 720.0, 1.0, 680.0 / 720.0)
         case .ratio1_1:
-            // 720×720 on 1280×720 -> u margin 280px
+            // 1:1 center square crop
             return SIMD4<Float>(280.0 / 1280.0, 0.0, 1000.0 / 1280.0, 1.0)
         case .ratio4_3:
-            // 960×720 on 1280×720 -> u margin 160px
+            // 4:3 center crop (0.125 to 0.875)
             return SIMD4<Float>(160.0 / 1280.0, 0.0, 1120.0 / 1280.0, 1.0)
         case .ratio16_9:
-            // Full 1280×720
+            // Full sensor frame
             return SIMD4<Float>(0.0, 0.0, 1.0, 1.0)
         }
     }

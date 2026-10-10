@@ -58,6 +58,10 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    cameraManager.switchCamera()
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
                 .gesture(
                     MagnificationGesture()
                         .onChanged { value in
@@ -162,6 +166,14 @@ struct ContentView: View {
         .onChange(of: vm.zoomFactor) { _, newZoom in
             cameraManager.setZoom(newZoom)
         }
+        .onChange(of: cameraManager.isFrontCamera) { _, isFront in
+            if isFront {
+                vm.lockToFrontCamera()
+            } else {
+                vm.unlockFromFrontCamera()
+            }
+            updateRendererConfig()
+        }
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(vm: vm)
         }
@@ -180,7 +192,7 @@ struct ContentView: View {
 
     private func updateRendererConfig() {
         let (w, h) = vm.outputSize
-        let crop = vm.activeRatio.cropUV
+        let crop = vm.activeRatio.cropUV(isFrontCamera: cameraManager.isFrontCamera)
         renderer?.engineMode = vm.engineMode
         renderer?.activeAestheticProfile = vm.activeAestheticProfile
         renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
@@ -291,9 +303,15 @@ private struct TopOSDBar: View {
                         label: ratio.displayLabel,
                         isActive: vm.activeRatio == ratio
                     ) {
+                        guard !vm.isFrontCameraLocked else {
+                            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                            return
+                        }
                         vm.activeRatio = ratio
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
+                    .opacity(vm.isFrontCameraLocked && ratio != .ratio4_3 ? 0.35 : 1.0)
+                    .disabled(vm.isFrontCameraLocked && ratio != .ratio4_3)
                     .rotationEffect(.degrees(rotation))
                 }
 
@@ -427,9 +445,15 @@ private struct PortraitDeck: View {
 
                 Spacer()
 
-                // Balanced spacer
-                Color.clear
-                    .frame(width: 64, height: 44)
+                // Flip Camera (Right) — matching 64pt width, alignment & padding as FlashButton
+                CameraFlipButton(
+                    isFront: cameraManager.isFrontCamera,
+                    rotation: rotation
+                ) {
+                    cameraManager.switchCamera()
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+                .frame(width: 64, alignment: .center)
             }
             .padding(.horizontal, 36)
             .padding(.bottom, 24)

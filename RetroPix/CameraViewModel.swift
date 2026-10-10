@@ -142,6 +142,22 @@ final class CameraViewModel {
         }
     }
 
+    var isFrontCameraLocked: Bool = false
+    private var rearCameraRatio: AspectRatio = .ratio4_3
+
+    func lockToFrontCamera() {
+        guard !isFrontCameraLocked else { return }
+        isFrontCameraLocked = true
+        rearCameraRatio = activeRatio
+        activeRatio = .ratio4_3
+    }
+
+    func unlockFromFrontCamera() {
+        guard isFrontCameraLocked else { return }
+        isFrontCameraLocked = false
+        activeRatio = rearCameraRatio
+    }
+
     var isPortrait: Bool = false
     var orientation: UInt32 = 0      // 0: landscape right, 1: portrait, 2: landscape left
 
@@ -293,6 +309,10 @@ final class CameraViewModel {
     }
 
     func cycleRatio() {
+        guard !isFrontCameraLocked else {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            return
+        }
         let all = AspectRatio.allCases
         if let idx = all.firstIndex(of: activeRatio) {
             activeRatio = all[(idx + 1) % all.count]

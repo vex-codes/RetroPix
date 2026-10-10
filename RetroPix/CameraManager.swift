@@ -19,6 +19,8 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     nonisolated(unsafe) private(set) var isTorchOn: Bool = false
     nonisolated(unsafe) private(set) var hasTorch: Bool = true
+    var isFrontCamera: Bool = false
+    private var currentPosition: AVCaptureDevice.Position = .back
 
     private let textureLock = NSLock()
     nonisolated(unsafe) private var _cameraTexture: MTLTexture?
@@ -72,7 +74,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
             let session = AVCaptureSession()
             session.beginConfiguration()
-            session.sessionPreset = .hd1280x720  // 16:9 — compute shader crops to 2:1 center
+            if session.canSetSessionPreset(.hd1920x1080) {
+                session.sessionPreset = .hd1920x1080
+            } else {
+                session.sessionPreset = .hd1280x720
+            }
 
             // --- Input ---
             guard
@@ -105,7 +111,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
             }
             camera.unlockForConfiguration()
             self.currentCamera = camera
-            self.hasTorch = camera.hasTorch
+            self.currentPosition = .back
+            let torchAvail = camera.hasTorch
+            DispatchQueue.main.async {
+                self.hasTorch = torchAvail
+                self.isFrontCamera = false
+            }
 
             // --- Output ---
             let output = AVCaptureVideoDataOutput()
@@ -133,6 +144,79 @@ final class CameraManager: NSObject, @unchecked Sendable {
             session.commitConfiguration()
             self.captureSession = session
             session.startRunning()
+        }
+    }
+
+    /// Toggles between front and back camera inputs seamlessly with no jerks or glitches.
+    func switchCamera() {
+        sessionQueue.async { [weak self] in
+            guard let self, let session = self.captureSession else { return }
+            let targetPosition: AVCaptureDevice.Position = (self.currentPosition == .back) ? .front : .back
+
+            // If torch is on, turn it off before switching
+            if self.isTorchOn {
+                self.setTorch(false)
+            }
+
+            session.beginConfiguration()
+
+            if let currentInput = session.inputs.first as? AVCaptureDeviceInput {
+                session.removeInput(currentInput)
+            }
+
+            guard
+                let newCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: targetPosition),
+                let newInput = try? AVCaptureDeviceInput(device: newCamera),
+                session.canAddInput(newInput)
+            else {
+                // Rollback if unavailable
+                if let currentCamera = self.currentCamera,
+                   let fallbackInput = try? AVCaptureDeviceInput(device: currentCamera),
+                   session.canAddInput(fallbackInput) {
+                    session.addInput(fallbackInput)
+                }
+                session.commitConfiguration()
+                return
+            }
+
+            session.addInput(newInput)
+
+            // Configure frame rate, focus, exposure, white balance
+            try? newCamera.lockForConfiguration()
+            let frameDuration = CMTime(value: 1, timescale: 30)
+            if newCamera.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+                $0.minFrameDuration <= frameDuration && frameDuration <= $0.maxFrameDuration
+            }) {
+                newCamera.activeVideoMinFrameDuration = frameDuration
+                newCamera.activeVideoMaxFrameDuration = frameDuration
+            }
+            if newCamera.isFocusModeSupported(.continuousAutoFocus) {
+                newCamera.focusMode = .continuousAutoFocus
+            }
+            if newCamera.isExposureModeSupported(.continuousAutoExposure) {
+                newCamera.exposureMode = .continuousAutoExposure
+            }
+            if newCamera.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                newCamera.whiteBalanceMode = .continuousAutoWhiteBalance
+            }
+            newCamera.unlockForConfiguration()
+
+            if let output = session.outputs.first as? AVCaptureVideoDataOutput,
+               let connection = output.connection(with: .video) {
+                if connection.isVideoRotationAngleSupported(0) {
+                    connection.videoRotationAngle = 0
+                }
+            }
+
+            session.commitConfiguration()
+
+            self.currentCamera = newCamera
+            self.currentPosition = targetPosition
+            let torchAvail = newCamera.hasTorch
+            DispatchQueue.main.async {
+                self.hasTorch = torchAvail
+                self.isFrontCamera = (targetPosition == .front)
+            }
         }
     }
 
