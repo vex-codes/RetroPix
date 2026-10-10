@@ -148,10 +148,23 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// Toggles between front and back camera inputs seamlessly with no jerks or glitches.
-    func switchCamera() {
+    func switchCamera(toFront: Bool? = nil, completion: ((Bool) -> Void)? = nil) {
         sessionQueue.async { [weak self] in
-            guard let self, let session = self.captureSession else { return }
-            let targetPosition: AVCaptureDevice.Position = (self.currentPosition == .back) ? .front : .back
+            guard let self, let session = self.captureSession else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
+            let targetPosition: AVCaptureDevice.Position
+            if let toFront = toFront {
+                targetPosition = toFront ? .front : .back
+            } else {
+                targetPosition = (self.currentPosition == .back) ? .front : .back
+            }
+
+            if targetPosition == self.currentPosition {
+                DispatchQueue.main.async { completion?(targetPosition == .front) }
+                return
+            }
 
             // If torch is on, turn it off before switching
             if self.isTorchOn {
@@ -176,6 +189,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
                     session.addInput(fallbackInput)
                 }
                 session.commitConfiguration()
+                let actualFront = (self.currentPosition == .front)
+                DispatchQueue.main.async {
+                    self.isFrontCamera = actualFront
+                    completion?(actualFront)
+                }
                 return
             }
 
@@ -213,9 +231,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
             self.currentCamera = newCamera
             self.currentPosition = targetPosition
             let torchAvail = newCamera.hasTorch
+            let isFront = (targetPosition == .front)
             DispatchQueue.main.async {
                 self.hasTorch = torchAvail
-                self.isFrontCamera = (targetPosition == .front)
+                self.isFrontCamera = isFront
+                completion?(isFront)
             }
         }
     }

@@ -138,24 +138,37 @@ final class CameraViewModel {
         return .ratio4_3
     }() {
         didSet {
-            UserDefaults.standard.set(activeRatio.rawValue, forKey: "activeRatio")
+            if !isFrontCamera {
+                UserDefaults.standard.set(activeRatio.rawValue, forKey: "activeRatio")
+            }
         }
     }
 
-    var isFrontCameraLocked: Bool = false
+    var isFrontCamera: Bool = false
+    var isFrontCameraLocked: Bool { isFrontCamera }
     private var rearCameraRatio: AspectRatio = .ratio4_3
 
+    func toggleCamera() {
+        setFrontCamera(!isFrontCamera)
+    }
+
+    func setFrontCamera(_ front: Bool) {
+        guard isFrontCamera != front else { return }
+        isFrontCamera = front
+        if front {
+            rearCameraRatio = activeRatio
+            activeRatio = .ratio4_3
+        } else {
+            activeRatio = rearCameraRatio
+        }
+    }
+
     func lockToFrontCamera() {
-        guard !isFrontCameraLocked else { return }
-        isFrontCameraLocked = true
-        rearCameraRatio = activeRatio
-        activeRatio = .ratio4_3
+        setFrontCamera(true)
     }
 
     func unlockFromFrontCamera() {
-        guard isFrontCameraLocked else { return }
-        isFrontCameraLocked = false
-        activeRatio = rearCameraRatio
+        setFrontCamera(false)
     }
 
     var isPortrait: Bool = false

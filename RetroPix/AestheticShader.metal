@@ -37,7 +37,7 @@ struct AestheticUniforms {
 // - Front camera: output x → sensor u (mirrored selfie), output y → sensor v (upright portrait).
 static inline float2 cameraUV(float nx, float ny, float4 c, bool isFrontCamera) {
     if (isFrontCamera) {
-        return float2(c.z - nx * (c.z - c.x), c.w - ny * (c.w - c.y));
+        return float2(c.z - nx * (c.z - c.x), c.y + ny * (c.w - c.y));
     } else {
         return float2(c.x + ny * (c.z - c.x), c.w - nx * (c.w - c.y));
     }

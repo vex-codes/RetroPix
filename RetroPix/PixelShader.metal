@@ -81,7 +81,7 @@ kernel void pixelKernel(
     if (uniforms.isFrontCamera == 1u) {
         // Front camera: texture X (u) is horizontal (mirrored selfie), texture Y (v) is vertical
         u = uniforms.cropUV.z - nx * (uniforms.cropUV.z - uniforms.cropUV.x);
-        v = uniforms.cropUV.w - ny * (uniforms.cropUV.w - uniforms.cropUV.y);
+        v = uniforms.cropUV.y + ny * (uniforms.cropUV.w - uniforms.cropUV.y);
     } else {
         // Back camera: sensor long axis (ny) -> u, sensor short axis (nx) -> v inverted
         u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
@@ -162,7 +162,7 @@ kernel void errorDiffusionKernel(
             float u, v;
             if (uniforms.isFrontCamera == 1u) {
                 u = uniforms.cropUV.z - nx * (uniforms.cropUV.z - uniforms.cropUV.x);
-                v = uniforms.cropUV.w - ny * (uniforms.cropUV.w - uniforms.cropUV.y);
+                v = uniforms.cropUV.y + ny * (uniforms.cropUV.w - uniforms.cropUV.y);
             } else {
                 u = uniforms.cropUV.x + ny * (uniforms.cropUV.z - uniforms.cropUV.x);
                 v = uniforms.cropUV.w - nx * (uniforms.cropUV.w - uniforms.cropUV.y);

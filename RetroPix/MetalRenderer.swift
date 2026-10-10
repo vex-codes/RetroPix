@@ -82,6 +82,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
     // MARK: — Camera feed
 
     private weak var cameraManager: CameraManager?
+    var isFrontCamera: Bool = false
 
     // MARK: — Init & Deinit
 
@@ -131,7 +132,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: — Configuration update
 
-    func updateConfig(width: Int, height: Int, cropUV: SIMD4<Float>, orientation: UInt32) {
+    func updateConfig(width: Int, height: Int, cropUV: SIMD4<Float>, orientation: UInt32, isFrontCamera: Bool = false) {
         if outputWidth != width || outputHeight != height {
             outputWidth = width
             outputHeight = height
@@ -140,6 +141,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
         }
         self.cropUV = cropUV
         self.orientation = orientation
+        self.isFrontCamera = isFrontCamera
     }
 
     // MARK: — Pipeline setup
@@ -283,7 +285,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
                     ditherSpread: ditherSpread,
                     paletteCount: paletteCount,
                     ditherAlgorithm: ditherAlgorithm,
-                    isFrontCamera: (cameraManager?.isFrontCamera == true) ? 1 : 0
+                    isFrontCamera: isFrontCamera ? 1 : 0
                 )
                 enc.setBytes(&uniforms, length: MemoryLayout<ShaderUniforms>.stride, index: 1)
 
@@ -327,13 +329,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
             else { return }
 
             frameSeed = Float((Int(frameSeed) + 1) % 65536)
-            let isFront = (cameraManager?.isFrontCamera == true)
             var uniforms = activeAestheticProfile.makeUniforms(
                 cropUV: cropUV,
                 outputWidth: outputWidth,
                 outputHeight: outputHeight,
                 seed: frameSeed,
-                isFrontCamera: isFront
+                isFrontCamera: isFrontCamera
             )
             aestheticUniformBuffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<AestheticUniforms>.stride)
 
