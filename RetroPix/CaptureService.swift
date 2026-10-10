@@ -230,8 +230,12 @@ enum CaptureService {
 
         guard let upscaledCG = ctx.makeImage() else { throw PhotoCaptureError.renderFailed }
 
-        // 4. Sanitize metadata (strip GPS, device model, serial numbers)
-        guard let cleanData = createSanitizedImageData(from: upscaledCG) else {
+        // 4. Inject Retro EXIF metadata & sanitize private hardware identifiers (GPS, serials)
+        guard let cleanData = createSanitizedImageData(
+            from: upscaledCG,
+            engineMode: renderer.engineMode,
+            profile: isAesthetic ? renderer.activeAestheticProfile : nil
+        ) else {
             throw PhotoCaptureError.encodingFailed
         }
 
@@ -268,26 +272,195 @@ enum CaptureService {
         _ = await verifyPhotoPermission()
     }
 
-    /// Strips GPS, camera serials, and device hardware identifiers before writing to Photo Library.
-    private static func createSanitizedImageData(from cgImage: CGImage) -> Data? {
+    private static let exifDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        return f
+    }()
+
+    /// Injects authentic retro camera Make/Model/Lens EXIF metadata while stripping GPS and device serials.
+    private static func createSanitizedImageData(
+        from cgImage: CGImage,
+        engineMode: CameraEngineMode,
+        profile: AestheticProfile?
+    ) -> Data? {
         let mutableData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             mutableData as CFMutableData,
-            UTType.png.identifier as CFString,
+            UTType.jpeg.identifier as CFString,
             1,
             nil
         ) else { return nil }
 
-        // Explicitly empty dictionaries: zero GPS, zero camera serial, zero device ID
-        let cleanProperties: [CFString: Any] = [
-            kCGImagePropertyTIFFDictionary: [:] as [String: Any],
-            kCGImagePropertyExifDictionary: [:] as [String: Any],
+        let meta = RetroCameraMetadata.resolve(engineMode: engineMode, profile: profile)
+        let now = exifDateFormatter.string(from: Date())
+
+        let tiffDict: [CFString: Any] = [
+            kCGImagePropertyTIFFMake: meta.make,
+            kCGImagePropertyTIFFModel: meta.model,
+            kCGImagePropertyTIFFSoftware: "RetroPix 1.0",
+            kCGImagePropertyTIFFDateTime: now
+        ]
+
+        let exifDict: [CFString: Any] = [
+            kCGImagePropertyExifDateTimeOriginal: now,
+            kCGImagePropertyExifDateTimeDigitized: now,
+            kCGImagePropertyExifLensModel: meta.lensModel,
+            kCGImagePropertyExifUserComment: meta.comment
+        ]
+
+        let properties: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: 0.98,
+            kCGImagePropertyTIFFDictionary: tiffDict,
+            kCGImagePropertyExifDictionary: exifDict,
             kCGImagePropertyGPSDictionary: [:] as [String: Any]
         ]
 
-        CGImageDestinationAddImage(destination, cgImage, cleanProperties as CFDictionary)
+        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return mutableData as Data
+    }
+}
+
+// MARK: — Retro Camera EXIF Metadata Resolution
+
+struct RetroCameraMetadata {
+    let make: String
+    let model: String
+    let lensModel: String
+    let comment: String
+
+    static func resolve(engineMode: CameraEngineMode, profile: AestheticProfile?) -> RetroCameraMetadata {
+        guard engineMode == .aesthetic, let profile else {
+            return RetroCameraMetadata(
+                make: "Nintendo",
+                model: "Game Boy Camera (Pocket Camera)",
+                lensModel: "Panasonic MN10243 CMOS Sensor",
+                comment: "RetroPix 8-Bit Pixel Matrix"
+            )
+        }
+
+        switch profile.id {
+        case "canon_g7x":
+            return RetroCameraMetadata(
+                make: "Canon",
+                model: "PowerShot G7 X Mark II",
+                lensModel: "8.8-36.8mm f/1.8-2.8 IS",
+                comment: "RetroPix Profile: Canon G7X"
+            )
+        case "kodak_pixpro":
+            return RetroCameraMetadata(
+                make: "Kodak",
+                model: "PIXPRO FZ55",
+                lensModel: "4.9-19.6mm f/3.0-6.6",
+                comment: "RetroPix Profile: Kodak Pixpro"
+            )
+        case "fuji_classic_chrome":
+            return RetroCameraMetadata(
+                make: "FUJIFILM",
+                model: "X100V",
+                lensModel: "FUJINON 23mm F2.0 II",
+                comment: "RetroPix Film Sim: Classic Chrome"
+            )
+        case "fuji_nostalgic_neg":
+            return RetroCameraMetadata(
+                make: "FUJIFILM",
+                model: "X-T5",
+                lensModel: "FUJINON XF 23mm F1.4 R LM WR",
+                comment: "RetroPix Film Sim: Nostalgic Neg"
+            )
+        case "ccd_digicam_2005":
+            return RetroCameraMetadata(
+                make: "Sony",
+                model: "Cyber-shot DSC-P200",
+                lensModel: "Carl Zeiss Vario-Tessar 7.9-23.7mm f/2.8-5.2",
+                comment: "RetroPix 2005 CCD Digicam"
+            )
+        case "cinestill_800t":
+            return RetroCameraMetadata(
+                make: "CineStill Film",
+                model: "CineStill 800T (Tungsten)",
+                lensModel: "35mm Prime Format",
+                comment: "RetroPix Analog Film: CineStill 800T"
+            )
+        case "kodak_gold_200":
+            return RetroCameraMetadata(
+                make: "Eastman Kodak",
+                model: "Kodak Gold 200",
+                lensModel: "35mm Point-and-Shoot Prime",
+                comment: "RetroPix Analog Film: Kodak Gold 200"
+            )
+        case "kodak_portra_400":
+            return RetroCameraMetadata(
+                make: "Eastman Kodak",
+                model: "Kodak Professional Portra 400",
+                lensModel: "35mm Daylight Balanced Format",
+                comment: "RetroPix Analog Film: Portra 400"
+            )
+        case "fuji_velvia_50":
+            return RetroCameraMetadata(
+                make: "FUJIFILM",
+                model: "Fujichrome Velvia 50 (RVP)",
+                lensModel: "Reversal Slide Film 35mm",
+                comment: "RetroPix Analog Film: Velvia 50"
+            )
+        case "ricoh_gr_mono":
+            return RetroCameraMetadata(
+                make: "RICOH IMAGING",
+                model: "RICOH GR IIIx",
+                lensModel: "GR LENS 26.1mm F2.8",
+                comment: "RetroPix High-Contrast B&W"
+            )
+        case "olympus_mju_ii":
+            return RetroCameraMetadata(
+                make: "Olympus",
+                model: "Olympus Stylus Epic [mju:]-II",
+                lensModel: "Olympus 35mm F2.8 Large Aperture",
+                comment: "RetroPix 35mm Point-and-Shoot"
+            )
+        case "fuji_superia_400":
+            return RetroCameraMetadata(
+                make: "FUJIFILM",
+                model: "Fujicolor Superia X-TRA 400",
+                lensModel: "4th Color Layer 35mm Film",
+                comment: "RetroPix Analog Film: Superia 400"
+            )
+        case "dazz_cpm35":
+            return RetroCameraMetadata(
+                make: "Dazz Film",
+                model: "CPM35 Color Print Film",
+                lensModel: "35mm Disposable Single-Element",
+                comment: "RetroPix Analog Film: CPM35"
+            )
+        case "polaroid_600":
+            return RetroCameraMetadata(
+                make: "Polaroid",
+                model: "Polaroid 600 OneStep CloseUp",
+                lensModel: "106mm f/14 Single-Element Plastic",
+                comment: "RetroPix Instant Card: Polaroid 600"
+            )
+        case "contax_t2":
+            return RetroCameraMetadata(
+                make: "Kyocera",
+                model: "CONTAX T2 Titanium",
+                lensModel: "Carl Zeiss Sonnar 38mm F2.8 T*",
+                comment: "RetroPix Luxury Compact: Contax T2"
+            )
+        case "sony_mavica":
+            return RetroCameraMetadata(
+                make: "Sony",
+                model: "Digital Mavica MVC-FD73",
+                lensModel: "Sony 4.8-48mm f/1.8-2.9 10x Optical",
+                comment: "RetroPix Floppy Digicam: Sony Mavica"
+            )
+        default:
+            return RetroCameraMetadata(
+                make: "RetroPix",
+                model: profile.name,
+                lensModel: "RetroPix Digicam Optics",
+                comment: "RetroPix Custom Aesthetic"
+            )
+        }
     }
 }
 
