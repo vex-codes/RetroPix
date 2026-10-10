@@ -962,7 +962,7 @@ private final class QuartzDateStampUIView: UIView {
     }
 }
 
-// MARK: — Viewfinder Composition Grid (Rule of Thirds & Golden Spiral)
+// MARK: — Viewfinder Composition Grid (Rule of Thirds & Golden Fibonacci Spiral)
 
 private struct ViewfinderGridOverlay: View {
     let mode: GridMode
@@ -973,117 +973,179 @@ private struct ViewfinderGridOverlay: View {
             let h = size.height
             guard w > 10, h > 10 else { return }
 
-            let gridColor = Color.white.opacity(0.38)
-            let shadowColor = Color.black.opacity(0.30)
-
             switch mode {
             case .off:
                 break
 
             case .ruleOfThirds:
-                // Rule of Thirds: 2 vertical & 2 horizontal dividing lines
-                var path = Path()
-                let x1 = w / 3.0
-                let x2 = w * 2.0 / 3.0
-                let y1 = h / 3.0
-                let y2 = h * 2.0 / 3.0
-
-                path.move(to: CGPoint(x: x1, y: 0))
-                path.addLine(to: CGPoint(x: x1, y: h))
-                path.move(to: CGPoint(x: x2, y: 0))
-                path.addLine(to: CGPoint(x: x2, y: h))
-
-                path.move(to: CGPoint(x: 0, y: y1))
-                path.addLine(to: CGPoint(x: w, y: y1))
-                path.move(to: CGPoint(x: 0, y: y2))
-                path.addLine(to: CGPoint(x: w, y: y2))
-
-                ctx.stroke(path, with: .color(shadowColor), lineWidth: 1.5)
-                ctx.stroke(path, with: .color(gridColor), lineWidth: 0.8)
+                drawRuleOfThirds(in: ctx, size: size)
 
             case .goldenSpiral:
-                drawGoldenSpiral(in: ctx, size: size, gridColor: gridColor, shadowColor: shadowColor)
+                drawGoldenSpiral(in: ctx, size: size)
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func drawGoldenSpiral(in ctx: GraphicsContext, size: CGSize, gridColor: Color, shadowColor: Color) {
-        var x = CGFloat(0)
-        var y = CGFloat(0)
-        var w = size.width
-        var h = size.height
+    private func drawRuleOfThirds(in ctx: GraphicsContext, size: CGSize) {
+        let w = size.width
+        let h = size.height
+        let x1 = w / 3.0
+        let x2 = w * 2.0 / 3.0
+        let y1 = h / 3.0
+        let y2 = h * 2.0 / 3.0
 
-        var spiralPath = Path()
+        // 1. Grid dividing lines with subtle shadow for visibility against light & dark scenes
+        var gridLines = Path()
+        gridLines.move(to: CGPoint(x: x1, y: 0)); gridLines.addLine(to: CGPoint(x: x1, y: h))
+        gridLines.move(to: CGPoint(x: x2, y: 0)); gridLines.addLine(to: CGPoint(x: x2, y: h))
+        gridLines.move(to: CGPoint(x: 0, y: y1)); gridLines.addLine(to: CGPoint(x: w, y: y1))
+        gridLines.move(to: CGPoint(x: 0, y: y2)); gridLines.addLine(to: CGPoint(x: w, y: y2))
+
+        var shadowLines = Path()
+        shadowLines.move(to: CGPoint(x: x1, y: 0.5)); shadowLines.addLine(to: CGPoint(x: x1, y: h))
+        shadowLines.move(to: CGPoint(x: x2, y: 0.5)); shadowLines.addLine(to: CGPoint(x: x2, y: h))
+        shadowLines.move(to: CGPoint(x: 0, y: y1 + 0.5)); shadowLines.addLine(to: CGPoint(x: w, y: y1 + 0.5))
+        shadowLines.move(to: CGPoint(x: 0, y: y2 + 0.5)); shadowLines.addLine(to: CGPoint(x: w, y: y2 + 0.5))
+
+        ctx.stroke(shadowLines, with: .color(Color.black.opacity(0.40)), lineWidth: 1.0)
+        ctx.stroke(gridLines, with: .color(Color.white.opacity(0.60)), lineWidth: 0.75)
+
+        // 2. Power point crosshairs at the 4 Rule of Thirds intersections
+        let tick: CGFloat = 6.0
+        var ticks = Path()
+        for px in [x1, x2] {
+            for py in [y1, y2] {
+                ticks.move(to: CGPoint(x: px - tick, y: py)); ticks.addLine(to: CGPoint(x: px + tick, y: py))
+                ticks.move(to: CGPoint(x: px, y: py - tick)); ticks.addLine(to: CGPoint(x: px, y: py + tick))
+            }
+        }
+        ctx.stroke(ticks, with: .color(Color.black.opacity(0.40)), lineWidth: 1.5)
+        ctx.stroke(ticks, with: .color(Color.white.opacity(0.85)), lineWidth: 1.0)
+
+        // 3. Center leveling crosshair
+        let cx = w / 2.0
+        let cy = h / 2.0
+        let centerArm: CGFloat = 7.0
+        var centerCross = Path()
+        centerCross.move(to: CGPoint(x: cx - centerArm, y: cy)); centerCross.addLine(to: CGPoint(x: cx + centerArm, y: cy))
+        centerCross.move(to: CGPoint(x: cx, y: cy - centerArm)); centerCross.addLine(to: CGPoint(x: cx, y: cy + centerArm))
+        ctx.stroke(centerCross, with: .color(Color.black.opacity(0.40)), lineWidth: 1.5)
+        ctx.stroke(centerCross, with: .color(Color.white.opacity(0.70)), lineWidth: 1.0)
+    }
+
+    private func drawGoldenSpiral(in ctx: GraphicsContext, size: CGSize) {
+        let w = size.width
+        let h = size.height
+        let phi: CGFloat = (1.0 + sqrt(5.0)) / 2.0
+        let isLandscape = w > h
+
+        // Recursive golden rectangle subdivision in portrait [0, 0, 1, phi]
+        // or rotated for landscape [0, 0, phi, 1]
+        var rx0: CGFloat = 0.0
+        var ry0: CGFloat = 0.0
+        var rx1: CGFloat = 1.0
+        var ry1: CGFloat = phi
+
         var boxesPath = Path()
+        var spiralPath = Path()
 
-        var dir = (w >= h) ? 0 : 3
+        var firstPoint = true
+        var lastScreenPt = CGPoint.zero
 
-        for _ in 0..<8 {
-            guard w > 2 && h > 2 else { break }
+        for k in 0..<8 {
+            let r = 1.0 / pow(phi, CGFloat(k))
+            let cut = k % 4
+            let sqX0: CGFloat
+            let sqY0: CGFloat
+            let sqX1: CGFloat
+            let sqY1: CGFloat
+            let centerX: CGFloat
+            let centerY: CGFloat
 
-            let sqX: CGFloat
-            let sqY: CGFloat
-            let actualS: CGFloat
-            let center: CGPoint
-            let startAngle: Angle
-            let endAngle: Angle
-
-            if w >= h {
-                actualS = h
-                if dir % 2 == 0 {
-                    sqX = x
-                    sqY = y
-                    x += actualS
-                    w -= actualS
-                    center = CGPoint(x: sqX + actualS, y: sqY + actualS)
-                    startAngle = .degrees(180)
-                    endAngle = .degrees(270)
-                } else {
-                    sqX = x + w - actualS
-                    sqY = y
-                    w -= actualS
-                    center = CGPoint(x: sqX, y: sqY)
-                    startAngle = .degrees(0)
-                    endAngle = .degrees(90)
-                }
-            } else {
-                actualS = w
-                if dir % 2 == 0 {
-                    sqX = x
-                    sqY = y
-                    y += actualS
-                    h -= actualS
-                    center = CGPoint(x: sqX + actualS, y: sqY)
-                    startAngle = .degrees(90)
-                    endAngle = .degrees(180)
-                } else {
-                    sqX = x
-                    sqY = y + h - actualS
-                    h -= actualS
-                    center = CGPoint(x: sqX, y: sqY + actualS)
-                    startAngle = .degrees(270)
-                    endAngle = .degrees(360)
-                }
+            switch cut {
+            case 0: // top
+                sqX0 = rx0; sqY0 = ry0; sqX1 = rx0 + r; sqY1 = ry0 + r
+                centerX = rx0; centerY = ry0 + r
+                ry0 += r
+            case 1: // right
+                sqX0 = rx1 - r; sqY0 = ry0; sqX1 = rx1; sqY1 = ry0 + r
+                centerX = rx1 - r; centerY = ry0
+                rx1 -= r
+            case 2: // bottom
+                sqX0 = rx1 - r; sqY0 = ry1 - r; sqX1 = rx1; sqY1 = ry1
+                centerX = rx1; centerY = ry1 - r
+                ry1 -= r
+            default: // left
+                sqX0 = rx0; sqY0 = ry1 - r; sqX1 = rx0 + r; sqY1 = ry1
+                centerX = rx0 + r; centerY = ry1
+                rx0 += r
             }
 
-            boxesPath.addRect(CGRect(x: sqX, y: sqY, width: actualS, height: actualS))
-            spiralPath.addArc(
-                center: center,
-                radius: actualS,
-                startAngle: startAngle,
-                endAngle: endAngle,
-                clockwise: false
-            )
+            // Screen box: mirrored horizontally so spiral curls naturally into lower-right golden section
+            let boxRect: CGRect
+            if isLandscape {
+                boxRect = CGRect(
+                    x: (1.0 - sqY1 / phi) * w,
+                    y: sqX0 * h,
+                    width: ((sqY1 - sqY0) / phi) * w,
+                    height: (sqX1 - sqX0) * h
+                )
+            } else {
+                boxRect = CGRect(
+                    x: (1.0 - sqX1) * w,
+                    y: (sqY0 / phi) * h,
+                    width: (sqX1 - sqX0) * w,
+                    height: ((sqY1 - sqY0) / phi) * h
+                )
+            }
+            boxesPath.addRect(boxRect)
 
-            dir = (dir + 1) % 4
+            // Sample quarter-circle arc with C^1 continuous tangent connection
+            let startDeg = Double((k - 1) * 90)
+            let endDeg = Double(k * 90)
+            let segments = 24
+
+            for s in 0...segments {
+                let frac = Double(s) / Double(segments)
+                let angleRad = (startDeg + (endDeg - startDeg) * frac) * .pi / 180.0
+                let px = centerX + r * CGFloat(cos(angleRad))
+                let py = centerY + r * CGFloat(sin(angleRad))
+
+                let screenPt: CGPoint
+                if isLandscape {
+                    screenPt = CGPoint(x: (1.0 - py / phi) * w, y: px * h)
+                } else {
+                    screenPt = CGPoint(x: (1.0 - px) * w, y: (py / phi) * h)
+                }
+
+                if firstPoint {
+                    spiralPath.move(to: screenPt)
+                    firstPoint = false
+                } else {
+                    spiralPath.addLine(to: screenPt)
+                }
+                lastScreenPt = screenPt
+            }
         }
 
-        ctx.stroke(boxesPath, with: .color(shadowColor.opacity(0.25)), lineWidth: 1.0)
-        ctx.stroke(boxesPath, with: .color(gridColor.opacity(0.30)), lineWidth: 0.6)
+        // 1. Harmonic subdivision boxes
+        ctx.stroke(boxesPath, with: .color(Color.black.opacity(0.35)), lineWidth: 1.0)
+        ctx.stroke(boxesPath, with: .color(Color.white.opacity(0.28)), lineWidth: 0.6)
 
-        ctx.stroke(spiralPath, with: .color(shadowColor), lineWidth: 2.0)
-        ctx.stroke(spiralPath, with: .color(gridColor), lineWidth: 1.2)
+        // 2. Smooth continuous Golden Spiral curve
+        ctx.stroke(spiralPath, with: .color(Color.black.opacity(0.45)), lineWidth: 2.2)
+        ctx.stroke(spiralPath, with: .color(RetroTheme.amber.opacity(0.90)), lineWidth: 1.4)
+
+        // 3. Golden Eye focal marker (+)
+        let eyeArm: CGFloat = 5.0
+        var eyeCross = Path()
+        eyeCross.move(to: CGPoint(x: lastScreenPt.x - eyeArm, y: lastScreenPt.y))
+        eyeCross.addLine(to: CGPoint(x: lastScreenPt.x + eyeArm, y: lastScreenPt.y))
+        eyeCross.move(to: CGPoint(x: lastScreenPt.x, y: lastScreenPt.y - eyeArm))
+        eyeCross.addLine(to: CGPoint(x: lastScreenPt.x, y: lastScreenPt.y + eyeArm))
+        ctx.stroke(eyeCross, with: .color(Color.black.opacity(0.40)), lineWidth: 1.5)
+        ctx.stroke(eyeCross, with: .color(RetroTheme.amber), lineWidth: 1.0)
     }
 }
 
