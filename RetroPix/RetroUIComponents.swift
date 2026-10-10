@@ -275,6 +275,46 @@ struct TimerButton: View {
     }
 }
 
+// MARK: — Composition Grid Quick Button (# / # 3×3 / # PHI)
+
+struct GridButton: View {
+    let mode: GridMode
+    var rotation: Double = 0.0
+    let action: () -> Void
+
+    private var label: String {
+        switch mode {
+        case .off:          return "GRID"
+        case .ruleOfThirds: return "# 3×3"
+        case .goldenSpiral: return "🌀 PHI"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(RetroTheme.mono(9))
+                .foregroundStyle(mode != .off ? RetroTheme.bg : RetroTheme.dimText)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(mode != .off ? RetroTheme.amber : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(
+                                    mode != .off ? RetroTheme.amber : RetroTheme.border,
+                                    lineWidth: 1
+                                )
+                        )
+                )
+                .rotationEffect(.degrees(rotation))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Composition Grid \(mode.rawValue)")
+    }
+}
+
 // MARK: — Engine Mode Button (8-BIT vs DIGICAM)
 
 struct EngineModeButton: View {

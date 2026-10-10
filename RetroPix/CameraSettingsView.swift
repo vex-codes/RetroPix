@@ -179,6 +179,39 @@ struct CameraSettingsView: View {
                             }
                         }
                         .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+
+                        // Composition Grid Selector
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("COMPOSITION GRID")
+                                .font(RetroTheme.mono(10))
+                                .foregroundStyle(RetroTheme.dimText)
+
+                            HStack(spacing: 8) {
+                                ForEach(GridMode.allCases) { mode in
+                                    Button {
+                                        vm.gridMode = mode
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    } label: {
+                                        Text(mode == .off ? "OFF" : (mode == .ruleOfThirds ? "RULE OF THIRDS (3×3)" : "GOLDEN SPIRAL (PHI)"))
+                                            .font(RetroTheme.mono(9))
+                                            .foregroundStyle(vm.gridMode == mode ? RetroTheme.bg : RetroTheme.amber)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(vm.gridMode == mode ? RetroTheme.amber : Color.clear)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .stroke(RetroTheme.amber.opacity(0.5), lineWidth: 1)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
                         .padding(.bottom, 6)
 
                         Divider().background(RetroTheme.border).padding(.vertical, 14)

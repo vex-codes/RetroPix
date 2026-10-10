@@ -45,6 +45,10 @@ struct ContentView: View {
                             MetalView(renderer: renderer, isPaused: showSettings || scenePhase != .active)
                             CrosshairOverlay()
 
+                            if vm.gridMode != .off {
+                                ViewfinderGridOverlay(mode: vm.gridMode)
+                            }
+
                             if vm.dateStampMode != .off {
                                 ViewfinderQuartzDateStamp(
                                     mode: vm.dateStampMode,
@@ -346,6 +350,11 @@ private struct TopOSDBar: View {
                 // Self-Timer Quick Button
                 TimerButton(duration: vm.timerDuration) {
                     vm.cycleTimer()
+                }
+
+                // Composition Grid Quick Button (3×3 / PHI)
+                GridButton(mode: vm.gridMode) {
+                    vm.cycleGrid()
                 }
             }
 
@@ -950,6 +959,131 @@ private final class QuartzDateStampUIView: UIView {
             color: color,
             withGhosting: true
         )
+    }
+}
+
+// MARK: — Viewfinder Composition Grid (Rule of Thirds & Golden Spiral)
+
+private struct ViewfinderGridOverlay: View {
+    let mode: GridMode
+
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width
+            let h = size.height
+            guard w > 10, h > 10 else { return }
+
+            let gridColor = Color.white.opacity(0.38)
+            let shadowColor = Color.black.opacity(0.30)
+
+            switch mode {
+            case .off:
+                break
+
+            case .ruleOfThirds:
+                // Rule of Thirds: 2 vertical & 2 horizontal dividing lines
+                var path = Path()
+                let x1 = w / 3.0
+                let x2 = w * 2.0 / 3.0
+                let y1 = h / 3.0
+                let y2 = h * 2.0 / 3.0
+
+                path.move(to: CGPoint(x: x1, y: 0))
+                path.addLine(to: CGPoint(x: x1, y: h))
+                path.move(to: CGPoint(x: x2, y: 0))
+                path.addLine(to: CGPoint(x: x2, y: h))
+
+                path.move(to: CGPoint(x: 0, y: y1))
+                path.addLine(to: CGPoint(x: w, y: y1))
+                path.move(to: CGPoint(x: 0, y: y2))
+                path.addLine(to: CGPoint(x: w, y: y2))
+
+                ctx.stroke(path, with: .color(shadowColor), lineWidth: 1.5)
+                ctx.stroke(path, with: .color(gridColor), lineWidth: 0.8)
+
+            case .goldenSpiral:
+                drawGoldenSpiral(in: ctx, size: size, gridColor: gridColor, shadowColor: shadowColor)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func drawGoldenSpiral(in ctx: GraphicsContext, size: CGSize, gridColor: Color, shadowColor: Color) {
+        var x = CGFloat(0)
+        var y = CGFloat(0)
+        var w = size.width
+        var h = size.height
+
+        var spiralPath = Path()
+        var boxesPath = Path()
+
+        var dir = (w >= h) ? 0 : 3
+
+        for _ in 0..<8 {
+            guard w > 2 && h > 2 else { break }
+
+            let sqX: CGFloat
+            let sqY: CGFloat
+            let actualS: CGFloat
+            let center: CGPoint
+            let startAngle: Angle
+            let endAngle: Angle
+
+            if w >= h {
+                actualS = h
+                if dir % 2 == 0 {
+                    sqX = x
+                    sqY = y
+                    x += actualS
+                    w -= actualS
+                    center = CGPoint(x: sqX + actualS, y: sqY + actualS)
+                    startAngle = .degrees(180)
+                    endAngle = .degrees(270)
+                } else {
+                    sqX = x + w - actualS
+                    sqY = y
+                    w -= actualS
+                    center = CGPoint(x: sqX, y: sqY)
+                    startAngle = .degrees(0)
+                    endAngle = .degrees(90)
+                }
+            } else {
+                actualS = w
+                if dir % 2 == 0 {
+                    sqX = x
+                    sqY = y
+                    y += actualS
+                    h -= actualS
+                    center = CGPoint(x: sqX + actualS, y: sqY)
+                    startAngle = .degrees(90)
+                    endAngle = .degrees(180)
+                } else {
+                    sqX = x
+                    sqY = y + h - actualS
+                    h -= actualS
+                    center = CGPoint(x: sqX, y: sqY + actualS)
+                    startAngle = .degrees(270)
+                    endAngle = .degrees(360)
+                }
+            }
+
+            boxesPath.addRect(CGRect(x: sqX, y: sqY, width: actualS, height: actualS))
+            spiralPath.addArc(
+                center: center,
+                radius: actualS,
+                startAngle: startAngle,
+                endAngle: endAngle,
+                clockwise: false
+            )
+
+            dir = (dir + 1) % 4
+        }
+
+        ctx.stroke(boxesPath, with: .color(shadowColor.opacity(0.25)), lineWidth: 1.0)
+        ctx.stroke(boxesPath, with: .color(gridColor.opacity(0.30)), lineWidth: 0.6)
+
+        ctx.stroke(spiralPath, with: .color(shadowColor), lineWidth: 2.0)
+        ctx.stroke(spiralPath, with: .color(gridColor), lineWidth: 1.2)
     }
 }
 

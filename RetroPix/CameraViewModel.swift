@@ -28,6 +28,15 @@ enum CameraEngineMode: String, CaseIterable, Identifiable, Codable {
     var displayLabel: String { rawValue }
 }
 
+enum GridMode: String, CaseIterable, Identifiable, Codable {
+    case off = "OFF"
+    case ruleOfThirds = "3×3"
+    case goldenSpiral = "PHI"
+
+    var id: String { rawValue }
+    var displayLabel: String { rawValue }
+}
+
 enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
     case bayer8 = "BAYER 8×8"
     case blueNoise = "BLUE NOISE"
@@ -213,6 +222,18 @@ final class CameraViewModel {
         }
     }
 
+    var gridMode: GridMode = {
+        if let saved = UserDefaults.standard.string(forKey: "gridMode"),
+           let mode = GridMode(rawValue: saved) {
+            return mode
+        }
+        return .off
+    }() {
+        didSet {
+            UserDefaults.standard.set(gridMode.rawValue, forKey: "gridMode")
+        }
+    }
+
     var hasTorch: Bool = true
     var isFlashOn: Bool = false
 
@@ -356,6 +377,16 @@ final class CameraViewModel {
         case 0:  timerDuration = 3
         case 3:  timerDuration = 10
         default: timerDuration = 0
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Cycles composition grid between OFF → 3×3 (Rule of Thirds) → PHI (Golden Spiral).
+    func cycleGrid() {
+        switch gridMode {
+        case .off:          gridMode = .ruleOfThirds
+        case .ruleOfThirds: gridMode = .goldenSpiral
+        case .goldenSpiral: gridMode = .off
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
