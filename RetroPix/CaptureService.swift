@@ -45,8 +45,10 @@ enum CaptureService {
             throw PhotoCaptureError.permissionDenied
         }
 
-        // 1. Readback — runs synchronously but only briefly (GPU flush + memcpy of pixel texture)
-        guard let source = renderer.capturePixelImage() else { throw PhotoCaptureError.renderFailed }
+        // 1. Readback — runs synchronously but only briefly (GPU flush + memcpy of active texture)
+        guard let activeCapture = renderer.captureActiveImage() else { throw PhotoCaptureError.renderFailed }
+        let source = activeCapture.image
+        let isAesthetic = activeCapture.isAesthetic
         guard let cgSource = source.cgImage else { throw PhotoCaptureError.renderFailed }
 
         let outW = renderer.outputWidth
@@ -54,28 +56,31 @@ enum CaptureService {
         guard outW > 0, outH > 0 else { throw PhotoCaptureError.renderFailed }
 
         // 2. Map target dimensions and rotation from physical device orientation
+        // 8-Bit mode: 8× upscale with .none interpolation (hard pixel edges)
+        // Aesthetic mode: 2× upscale with .high interpolation (smooth film grain & optical rolloff)
+        let scale = isAesthetic ? 2 : 8
         let targetW: Int
         let targetH: Int
         let angle: CGFloat
-        let drawW = outW * 8
-        let drawH = outH * 8
+        let drawW = outW * scale
+        let drawH = outH * scale
 
         switch orientation {
         case .landscapeLeft:
-            targetW = outH * 8
-            targetH = outW * 8
+            targetW = outH * scale
+            targetH = outW * scale
             angle = .pi / 2.0
         case .landscapeRight:
-            targetW = outH * 8
-            targetH = outW * 8
+            targetW = outH * scale
+            targetH = outW * scale
             angle = -.pi / 2.0
         case .portraitUpsideDown:
-            targetW = outW * 8
-            targetH = outH * 8
+            targetW = outW * scale
+            targetH = outH * scale
             angle = .pi
         case .portrait:
-            targetW = outW * 8
-            targetH = outH * 8
+            targetW = outW * scale
+            targetH = outH * scale
             angle = 0
         }
 
@@ -90,7 +95,8 @@ enum CaptureService {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { throw PhotoCaptureError.renderFailed }
 
-        ctx.interpolationQuality = .none   // CRITICAL — hard pixel edges, never blurry
+        // Hard pixel edges for 8-bit, smooth bicubic for aesthetic analog
+        ctx.interpolationQuality = isAesthetic ? .high : .none
 
         let borderInset: CGFloat = frameBorderEnabled ? max(24.0, CGFloat(min(targetW, targetH)) * 0.045) : 0.0
 

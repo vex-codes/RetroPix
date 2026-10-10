@@ -243,3 +243,32 @@ struct TimerButton: View {
         .accessibilityLabel("Timer \(duration) seconds")
     }
 }
+
+// MARK: — Engine Mode Button (8-BIT vs DIGICAM)
+
+struct EngineModeButton: View {
+    let mode: CameraEngineMode
+    var rotation: Double = 0.0
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(mode.rawValue)
+                .font(RetroTheme.mono(9, weight: .black))
+                .foregroundStyle(mode == .pixel8Bit ? RetroTheme.green : RetroTheme.red)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill((mode == .pixel8Bit ? RetroTheme.green : RetroTheme.red).opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke((mode == .pixel8Bit ? RetroTheme.green : RetroTheme.red).opacity(0.6), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .rotationEffect(.degrees(rotation))
+        .accessibilityLabel("Engine Mode: \(mode.rawValue)")
+    }
+}

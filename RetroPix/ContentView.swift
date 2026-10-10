@@ -127,6 +127,16 @@ struct ContentView: View {
             }
         }
         // ── Wire ViewModel → Metal + Camera ──────────────────────────────────
+        .onChange(of: vm.engineMode) { _, newMode in
+            renderer?.engineMode = newMode
+            updateRendererConfig()
+        }
+        .onChange(of: vm.activeAestheticProfile) { _, newProfile in
+            renderer?.activeAestheticProfile = newProfile
+        }
+        .onChange(of: vm.activeAestheticProfileIndex) { _, _ in
+            renderer?.activeAestheticProfile = vm.activeAestheticProfile
+        }
         .onChange(of: vm.activePalette) { _, newPalette in
             renderer?.updatePalette(newPalette)
         }
@@ -167,6 +177,8 @@ struct ContentView: View {
     private func updateRendererConfig() {
         let (w, h) = vm.outputSize
         let crop = vm.activeRatio.cropUV
+        renderer?.engineMode = vm.engineMode
+        renderer?.activeAestheticProfile = vm.activeAestheticProfile
         renderer?.updateConfig(width: w, height: h, cropUV: crop, orientation: 1)
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
@@ -259,8 +271,17 @@ private struct TopOSDBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Aspect ratio quick switchers + self-timer
+            // Engine mode switcher + Aspect ratio quick switchers + self-timer
             HStack(spacing: 6) {
+                EngineModeButton(mode: vm.engineMode, rotation: rotation) {
+                    vm.cycleEngineMode()
+                }
+
+                Rectangle()
+                    .fill(RetroTheme.border)
+                    .frame(width: 1, height: 16)
+                    .padding(.horizontal, 1)
+
                 ForEach(AspectRatio.allCases) { ratio in
                     RatioButton(
                         label: ratio.displayLabel,
@@ -323,35 +344,52 @@ private struct PortraitDeck: View {
             // Row 1: Telemetry (stays horizontal)
             HStack {
                 let (w, h) = vm.outputSize
-                Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)")
+                let modeCode = vm.engineMode == .pixel8Bit ? "" : " [\(vm.activeAestheticProfile.code)]"
+                Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)\(modeCode)")
                     .font(RetroTheme.mono(9))
-                    .foregroundStyle(RetroTheme.amber)
+                    .foregroundStyle(vm.engineMode == .pixel8Bit ? RetroTheme.amber : RetroTheme.red)
 
                 Spacer()
 
                 let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
-                Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
-                    .font(RetroTheme.mono(8, weight: .regular))
-                    .foregroundStyle(RetroTheme.dimText)
+                if vm.engineMode == .pixel8Bit {
+                    Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
+                        .font(RetroTheme.mono(8, weight: .regular))
+                        .foregroundStyle(RetroTheme.dimText)
+                } else {
+                    Text(String(format: "%@EV %+.1f  %@ '%@", zoomStr, vm.evBias, vm.activeAestheticProfile.category.rawValue, vm.activeAestheticProfile.eraYear))
+                        .font(RetroTheme.mono(8, weight: .regular))
+                        .foregroundStyle(RetroTheme.dimText)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
 
             Divider().background(RetroTheme.border)
 
-            // Row 2: Palette Cycler (stays horizontal, does NOT rotate)
-            PaletteCycler(vm: vm)
-                .padding(.horizontal, 14)
+            // Row 2: Cycler (Palette in 8-bit, Aesthetic profile in digicam)
+            if vm.engineMode == .pixel8Bit {
+                PaletteCycler(vm: vm)
+                    .padding(.horizontal, 14)
+            } else {
+                AestheticProfileCycler(vm: vm)
+                    .padding(.horizontal, 14)
+            }
 
-            // Row 3: Exposure + Dither (rotates)
+            // Row 3: Exposure + Dither/Profile (rotates)
             HStack(spacing: 0) {
                 EVStepper(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
 
                 DeckDivider()
 
-                DiamondToggle(vm: vm, rotation: rotation)
-                    .frame(maxWidth: .infinity)
+                if vm.engineMode == .pixel8Bit {
+                    DiamondToggle(vm: vm, rotation: rotation)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    AestheticFxBadge(vm: vm, rotation: rotation)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .frame(height: 44)
 
@@ -425,6 +463,68 @@ private struct PaletteCycler: View {
     }
 }
 
+// MARK: — Aesthetic profile cycler [<] CANON G7 X [>] (stays horizontal)
+
+private struct AestheticProfileCycler: View {
+    var vm: CameraViewModel
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 8) {
+                ArrowBtn(symbol: "<") {
+                    vm.cycleAestheticProfile(forward: false)
+                }
+
+                VStack(spacing: 1) {
+                    Text(vm.activeAestheticProfile.name)
+                        .font(RetroTheme.mono(11))
+                        .foregroundStyle(RetroTheme.red)
+                        .frame(minWidth: 150, alignment: .center)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+
+                    Text("\(vm.activeAestheticProfile.subtitle.uppercased()) • \(vm.activeAestheticProfile.eraYear)")
+                        .font(RetroTheme.mono(7, weight: .regular))
+                        .foregroundStyle(RetroTheme.dimText)
+                        .lineLimit(1)
+                }
+
+                ArrowBtn(symbol: ">") {
+                    vm.cycleAestheticProfile(forward: true)
+                }
+            }
+
+            // Category & Code Pill Bar
+            HStack(spacing: 6) {
+                Text(vm.activeAestheticProfile.category.rawValue)
+                    .font(RetroTheme.mono(7, weight: .bold))
+                    .foregroundStyle(RetroTheme.amber)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(RetroTheme.amber.opacity(0.12))
+                            .overlay(RoundedRectangle(cornerRadius: 2).stroke(RetroTheme.amber.opacity(0.4), lineWidth: 0.5))
+                    )
+
+                Text(vm.activeAestheticProfile.code)
+                    .font(RetroTheme.mono(7, weight: .bold))
+                    .foregroundStyle(RetroTheme.dimText)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(RetroTheme.border, lineWidth: 0.5)
+                    )
+
+                Text(String(format: "GRAIN %d%%", Int(round(vm.activeAestheticProfile.grainAmount * 100))))
+                    .font(RetroTheme.mono(7, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+        }
+    }
+}
+
 // MARK: — EV stepper  [-] EV: 0.0 [+]
 
 private struct EVStepper: View {
@@ -468,6 +568,31 @@ private struct DiamondToggle: View {
                     .font(RetroTheme.mono(14))
                     .foregroundStyle(vm.ditherIntensity == 0 ? RetroTheme.dimText : RetroTheme.green)
                 Text("DITHER")
+                    .font(RetroTheme.mono(7, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
+            }
+            .rotationEffect(.degrees(rotation))
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+    }
+}
+
+// MARK: — Aesthetic FX / Profile quick badge (tap to cycle)
+
+private struct AestheticFxBadge: View {
+    var vm: CameraViewModel
+    let rotation: Double
+
+    var body: some View {
+        Button {
+            vm.cycleAestheticProfile(forward: true)
+        } label: {
+            VStack(spacing: 3) {
+                Text(vm.activeAestheticProfile.code)
+                    .font(RetroTheme.mono(13))
+                    .foregroundStyle(RetroTheme.red)
+                Text("PROFILE")
                     .font(RetroTheme.mono(7, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }

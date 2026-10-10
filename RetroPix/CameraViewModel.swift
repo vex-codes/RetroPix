@@ -20,6 +20,14 @@ enum DateStampMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum CameraEngineMode: String, CaseIterable, Identifiable, Codable {
+    case pixel8Bit = "8-BIT"
+    case aesthetic = "DIGICAM"
+
+    var id: String { rawValue }
+    var displayLabel: String { rawValue }
+}
+
 enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
     case bayer8 = "BAYER 8×8"
     case blueNoise = "BLUE NOISE"
@@ -41,6 +49,39 @@ enum DitherAlgorithm: String, CaseIterable, Identifiable, Codable {
 
 @Observable
 final class CameraViewModel {
+    var engineMode: CameraEngineMode = {
+        if let saved = UserDefaults.standard.string(forKey: "cameraEngineMode"),
+           let mode = CameraEngineMode(rawValue: saved) {
+            return mode
+        }
+        return .pixel8Bit
+    }() {
+        didSet {
+            UserDefaults.standard.set(engineMode.rawValue, forKey: "cameraEngineMode")
+        }
+    }
+
+    var aestheticProfiles: [AestheticProfile] = AestheticProfile.allBuiltIn
+
+    var activeAestheticProfileIndex: Int = {
+        if let savedId = UserDefaults.standard.string(forKey: "activeAestheticProfileId"),
+           let idx = AestheticProfile.allBuiltIn.firstIndex(where: { $0.id == savedId }) {
+            return idx
+        }
+        return 0
+    }() {
+        didSet {
+            if activeAestheticProfileIndex >= 0 && activeAestheticProfileIndex < aestheticProfiles.count {
+                UserDefaults.standard.set(aestheticProfiles[activeAestheticProfileIndex].id, forKey: "activeAestheticProfileId")
+            }
+        }
+    }
+
+    var activeAestheticProfile: AestheticProfile {
+        guard !aestheticProfiles.isEmpty else { return AestheticProfile.canonG7X }
+        let safeIdx = (activeAestheticProfileIndex % aestheticProfiles.count + aestheticProfiles.count) % aestheticProfiles.count
+        return aestheticProfiles[safeIdx]
+    }
     var activePaletteIndex: Int = {
         let list = Palette.loadPalettes()
         if let savedId = UserDefaults.standard.string(forKey: "activePaletteId"),
@@ -148,9 +189,14 @@ final class CameraViewModel {
         return palettes[safeIdx]
     }
 
-    /// Internal rendering resolution for active ratio and orientation
+    /// Internal rendering resolution for active ratio, orientation, and engine mode
     var outputSize: (w: Int, h: Int) {
-        activeRatio.outputSize
+        switch engineMode {
+        case .pixel8Bit:
+            return activeRatio.outputSize
+        case .aesthetic:
+            return activeRatio.aestheticOutputSize
+        }
     }
 
     /// Real-time human-readable label matching exact percentage or OFF.
@@ -285,6 +331,20 @@ final class CameraViewModel {
         } else {
             dateStampMode = .off
         }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Toggles between 8-BIT (Pixel) and DIGICAM (Aesthetic) computational engines.
+    func cycleEngineMode() {
+        engineMode = (engineMode == .pixel8Bit) ? .aesthetic : .pixel8Bit
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// Cycles active aesthetic camera profile / film simulation.
+    func cycleAestheticProfile(forward: Bool) {
+        let count = aestheticProfiles.count
+        guard count > 0 else { return }
+        activeAestheticProfileIndex = (activeAestheticProfileIndex + (forward ? 1 : count - 1)) % count
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

@@ -21,6 +21,16 @@ enum AspectRatio: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Full-resolution render target for AESTHETIC (Digicam/Film) mode
+    var aestheticOutputSize: (w: Int, h: Int) {
+        switch self {
+        case .ratio2_1:  return (640, 1280)
+        case .ratio1_1:  return (720, 720)
+        case .ratio4_3:  return (720, 960)
+        case .ratio16_9: return (720, 1280)
+        }
+    }
+
     /// Crop UV bounds (u0, v0, u1, v1) for 1280×720 camera buffer
     var cropUV: SIMD4<Float> {
         switch self {
