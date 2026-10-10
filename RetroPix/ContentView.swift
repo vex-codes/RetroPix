@@ -360,24 +360,13 @@ private struct TopOSDBar: View {
                     .fill(RetroTheme.border)
                     .frame(width: 1, height: 16)
                     .padding(.horizontal, 1)
+                    .accessibilityHidden(true)
 
-                if vm.isFrontCameraLocked {
-                    RatioButton(
-                        label: AspectRatio.ratio4_3.displayLabel,
-                        isActive: true
-                    ) {
-                        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                    }
-                } else {
-                    ForEach(AspectRatio.allCases) { ratio in
-                        RatioButton(
-                            label: ratio.displayLabel,
-                            isActive: vm.activeRatio == ratio
-                        ) {
-                            vm.activeRatio = ratio
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                    }
+                AspectCycleButton(
+                    ratio: vm.activeRatio,
+                    isLocked: vm.isFrontCameraLocked
+                ) {
+                    vm.cycleRatio()
                 }
 
                 // Self-Timer Quick Button
@@ -385,7 +374,7 @@ private struct TopOSDBar: View {
                     vm.cycleTimer()
                 }
 
-                // Composition Grid Quick Button (3×3 / PHI)
+                // Composition Grid Quick Button (GRID / 3×3 / PHI)
                 GridButton(mode: vm.gridMode) {
                     vm.cycleGrid()
                 }
@@ -393,27 +382,26 @@ private struct TopOSDBar: View {
 
             Spacer()
 
-            // Menu button (three lines)
+            // Menu button (HIG standard SF Symbol)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onMenu()
             } label: {
-                VStack(spacing: 3) {
-                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
-                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
-                    Rectangle().fill(RetroTheme.green).frame(width: 14, height: 1.5)
-                }
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(RetroTheme.green.opacity(0.07))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(RetroTheme.green.opacity(0.45), lineWidth: 1)
-                        )
-                )
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(RetroTheme.green)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(RetroTheme.green.opacity(0.07))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(RetroTheme.green.opacity(0.45), lineWidth: 1)
+                            )
+                    )
             }
             .frame(width: 44, height: 44)
+            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
@@ -436,28 +424,25 @@ private struct PortraitDeck: View {
             // Row 1: Telemetry (stays horizontal)
             HStack {
                 let (w, h) = vm.outputSize
-                let modeCode = vm.engineMode == .pixel8Bit ? "" : " [\(vm.activeAestheticProfile.code)]"
-                Text("\(w)×\(h)  \(vm.activeRatio.displayLabel)\(modeCode)")
+                let engineTag = vm.engineMode == .pixel8Bit ? "8-BIT MATRIX" : "DIGICAM RAW"
+                Text("\(w)×\(h)  \(engineTag)")
                     .font(RetroTheme.mono(9))
                     .foregroundStyle(vm.engineMode == .pixel8Bit ? RetroTheme.amber : RetroTheme.red)
 
                 Spacer()
 
                 let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
-                if vm.engineMode == .pixel8Bit {
-                    Text(String(format: "%@EV %+.1f  DITHER %@", zoomStr, vm.evBias, vm.ditherLabel))
-                        .font(RetroTheme.mono(8, weight: .regular))
-                        .foregroundStyle(RetroTheme.dimText)
-                } else {
-                    Text(String(format: "%@EV %+.1f  %@ '%@", zoomStr, vm.evBias, vm.activeAestheticProfile.category.rawValue, vm.activeAestheticProfile.eraYear))
-                        .font(RetroTheme.mono(8, weight: .regular))
-                        .foregroundStyle(RetroTheme.dimText)
-                }
+                let sensorStr = vm.engineMode == .pixel8Bit ? "BAYER SENSOR" : "CCD MATRIX"
+                Text("\(zoomStr)\(sensorStr)")
+                    .font(RetroTheme.mono(8, weight: .regular))
+                    .foregroundStyle(RetroTheme.dimText)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
 
-            Divider().background(RetroTheme.border)
+            Divider()
+                .background(RetroTheme.border)
+                .accessibilityHidden(true)
 
             // Row 2: Cycler (Palette in 8-bit, Aesthetic profile in digicam)
             if vm.engineMode == .pixel8Bit {
@@ -468,7 +453,7 @@ private struct PortraitDeck: View {
                     .padding(.horizontal, 14)
             }
 
-            // Row 3: Exposure + Dither/Profile (rotates)
+            // Row 3: Exposure + Dither/Date controls (rotates)
             HStack(spacing: 0) {
                 EVStepper(vm: vm, rotation: rotation)
                     .frame(maxWidth: .infinity)
@@ -478,10 +463,12 @@ private struct PortraitDeck: View {
                 if vm.engineMode == .pixel8Bit {
                     DiamondToggle(vm: vm, rotation: rotation)
                         .frame(maxWidth: .infinity)
-                } else {
-                    DateStampToggle(vm: vm, rotation: rotation)
-                        .frame(maxWidth: .infinity)
+
+                    DeckDivider()
                 }
+
+                DateStampToggle(vm: vm, rotation: rotation)
+                    .frame(maxWidth: .infinity)
             }
             .frame(height: 44)
 
@@ -546,7 +533,7 @@ private struct PaletteCycler: View {
     var body: some View {
         VStack(spacing: 4) {
             HStack(spacing: 8) {
-                ArrowBtn(symbol: "<") {
+                ArrowBtn(symbol: "<", label: "Previous Palette") {
                     vm.cyclePalette(forward: false)
                 }
 
@@ -557,7 +544,7 @@ private struct PaletteCycler: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
-                ArrowBtn(symbol: ">") {
+                ArrowBtn(symbol: ">", label: "Next Palette") {
                     vm.cyclePalette(forward: true)
                 }
             }
@@ -575,7 +562,7 @@ private struct AestheticProfileCycler: View {
     var body: some View {
         VStack(spacing: 3) {
             HStack(spacing: 8) {
-                ArrowBtn(symbol: "<") {
+                ArrowBtn(symbol: "<", label: "Previous Aesthetic Profile") {
                     vm.cycleAestheticProfile(forward: false)
                 }
 
@@ -593,7 +580,7 @@ private struct AestheticProfileCycler: View {
                         .lineLimit(1)
                 }
 
-                ArrowBtn(symbol: ">") {
+                ArrowBtn(symbol: ">", label: "Next Aesthetic Profile") {
                     vm.cycleAestheticProfile(forward: true)
                 }
             }
@@ -637,7 +624,7 @@ private struct EVStepper: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ArrowBtn(symbol: "−", rotation: rotation) {
+            ArrowBtn(symbol: "−", label: "Decrease Exposure", rotation: rotation) {
                 vm.stepEV(up: false)
             }
 
@@ -652,7 +639,7 @@ private struct EVStepper: View {
             }
             .rotationEffect(.degrees(rotation))
 
-            ArrowBtn(symbol: "+", rotation: rotation) {
+            ArrowBtn(symbol: "+", label: "Increase Exposure", rotation: rotation) {
                 vm.stepEV(up: true)
             }
         }
@@ -679,6 +666,7 @@ private struct DiamondToggle: View {
         }
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Dither intensity: \(vm.ditherLabel)")
     }
 }
 
@@ -702,6 +690,7 @@ private struct DateStampToggle: View {
         }
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Date stamp: \(label)")
     }
 
     private var label: String {
@@ -725,6 +714,7 @@ private struct DateStampToggle: View {
 
 private struct ArrowBtn: View {
     let symbol: String
+    var label: String = "Arrow"
     var rotation: Double = 0.0
     let action: () -> Void
 
@@ -737,6 +727,7 @@ private struct ArrowBtn: View {
                 .rotationEffect(.degrees(rotation))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 

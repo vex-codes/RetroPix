@@ -129,33 +129,46 @@ struct DeckDivider: View {
             .fill(RetroTheme.border)
             .frame(width: 1)
             .padding(.vertical, 10)
+            .accessibilityHidden(true)
     }
 }
 
-// MARK: — Ratio Button
+// MARK: — Ratio Cycle Button (HIG 44pt Touch Target)
 
-struct RatioButton: View {
-    let label: String
-    let isActive: Bool
+struct AspectCycleButton: View {
+    let ratio: AspectRatio
+    var isLocked: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(label)
-                .font(RetroTheme.mono(9))
-                .foregroundStyle(isActive ? RetroTheme.bg : RetroTheme.amber)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(isActive ? RetroTheme.amber : Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(RetroTheme.amber.opacity(0.5), lineWidth: 1)
-                        )
-                )
+            HStack(spacing: 3) {
+                Text(ratio.displayLabel)
+                    .font(RetroTheme.mono(9, weight: .bold))
+                if isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 7))
+                }
+            }
+            .foregroundStyle(isLocked ? RetroTheme.dimText : RetroTheme.amber)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(isLocked ? Color.clear : RetroTheme.amber.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(
+                                (isLocked ? RetroTheme.border : RetroTheme.amber).opacity(0.55),
+                                lineWidth: 1
+                            )
+                    )
+            )
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isLocked ? "Aspect Ratio 4:3 Locked" : "Aspect Ratio \(ratio.displayLabel), tap to cycle")
     }
 }
 
@@ -236,7 +249,7 @@ struct TimerButton: View {
     let action: () -> Void
 
     private var label: String {
-        duration == 0 ? "⏱" : "⏱\(duration)s"
+        duration == 0 ? "TMR" : "\(duration)S"
     }
 
     var body: some View {
@@ -258,13 +271,15 @@ struct TimerButton: View {
                         )
                 )
                 .rotationEffect(.degrees(rotation))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Timer \(duration) seconds")
     }
 }
 
-// MARK: — Composition Grid Quick Button (# / # 3×3 / # PHI)
+// MARK: — Composition Grid Quick Button (GRID / 3×3 / PHI)
 
 struct GridButton: View {
     let mode: GridMode
@@ -274,8 +289,8 @@ struct GridButton: View {
     private var label: String {
         switch mode {
         case .off:          return "GRID"
-        case .ruleOfThirds: return "# 3×3"
-        case .goldenSpiral: return "🌀 PHI"
+        case .ruleOfThirds: return "3×3"
+        case .goldenSpiral: return "PHI"
         }
     }
 
@@ -298,6 +313,8 @@ struct GridButton: View {
                         )
                 )
                 .rotationEffect(.degrees(rotation))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Composition Grid \(mode.rawValue)")
@@ -326,6 +343,8 @@ struct EngineModeButton: View {
                                 .stroke((mode == .pixel8Bit ? RetroTheme.green : RetroTheme.red).opacity(0.6), lineWidth: 1)
                         )
                 )
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .rotationEffect(.degrees(rotation))

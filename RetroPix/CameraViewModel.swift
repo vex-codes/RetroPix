@@ -377,6 +377,7 @@ final class CameraViewModel {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
+
     /// Cycles self-timer between OFF (0s) → 3s → 10s.
     func cycleTimer() {
         switch timerDuration {
