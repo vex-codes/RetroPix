@@ -780,7 +780,6 @@ private struct CountdownOSDOverlay: View {
 final class ShutterAudioService: @unchecked Sendable {
     static let shared = ShutterAudioService()
     private var shutterPlayer: AVAudioPlayer?
-    private var motorPlayer: AVAudioPlayer?
     private var normalBeepPlayer: AVAudioPlayer?
     private var urgentBeepPlayer: AVAudioPlayer?
 
@@ -792,10 +791,6 @@ final class ShutterAudioService: @unchecked Sendable {
         shutterPlayer = try? AVAudioPlayer(data: wav)
         shutterPlayer?.prepareToPlay()
 
-        let motorWav = createMotorWindingWav()
-        motorPlayer = try? AVAudioPlayer(data: motorWav)
-        motorPlayer?.prepareToPlay()
-
         let normalWav = createToneWav(freq: 1200.0, duration: 0.05)
         normalBeepPlayer = try? AVAudioPlayer(data: normalWav)
         normalBeepPlayer?.prepareToPlay()
@@ -805,20 +800,12 @@ final class ShutterAudioService: @unchecked Sendable {
         urgentBeepPlayer?.prepareToPlay()
     }
 
-    func play(withMotorWinding: Bool = true) {
+    func play() {
         if let shutterPlayer {
             shutterPlayer.currentTime = 0
             shutterPlayer.play()
         }
         AudioServicesPlaySystemSound(1108)
-
-        if withMotorWinding {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { [weak self] in
-                guard let self, let p = self.motorPlayer else { return }
-                p.currentTime = 0
-                p.play()
-            }
-        }
     }
 
     func playBeep(urgent: Bool = false) {
@@ -920,47 +907,6 @@ final class ShutterAudioService: @unchecked Sendable {
         return data
     }
 
-    private func createMotorWindingWav() -> Data {
-        let sampleRate: Int32 = 44100
-        let duration: Double = 0.16
-        let numSamples = Int(Double(sampleRate) * duration)
-        var samples = [Int16](repeating: 0, count: numSamples)
-
-        for i in 0..<numSamples {
-            let t = Double(i) / Double(sampleRate)
-            let motorFreq = 220.0 + 35.0 * sin(2.0 * .pi * 28.0 * t)
-            let buzz = sin(2.0 * .pi * motorFreq * t)
-            let gearClick = (i % 600 < 30) ? 0.35 : 0.0
-            let noise = Double.random(in: -0.2...0.2)
-            let env = sin(.pi * (t / duration))
-            let s = max(-1.0, min(1.0, (buzz + gearClick + noise) * env * 0.45))
-            samples[i] = Int16(s * 32767.0)
-        }
-
-        var data = Data()
-        data.append(contentsOf: [UInt8]("RIFF".utf8))
-        let fileSize = Int32(36 + numSamples * 2)
-        withUnsafeBytes(of: fileSize.littleEndian) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [UInt8]("WAVEfmt ".utf8))
-        let subchunk1Size: Int32 = 16
-        withUnsafeBytes(of: subchunk1Size.littleEndian) { data.append(contentsOf: $0) }
-        let audioFormat: Int16 = 1
-        withUnsafeBytes(of: audioFormat.littleEndian) { data.append(contentsOf: $0) }
-        let numChannels: Int16 = 1
-        withUnsafeBytes(of: numChannels.littleEndian) { data.append(contentsOf: $0) }
-        withUnsafeBytes(of: sampleRate.littleEndian) { data.append(contentsOf: $0) }
-        let byteRate = sampleRate * 2
-        withUnsafeBytes(of: byteRate.littleEndian) { data.append(contentsOf: $0) }
-        let blockAlign: Int16 = 2
-        withUnsafeBytes(of: blockAlign.littleEndian) { data.append(contentsOf: $0) }
-        let bitsPerSample: Int16 = 16
-        withUnsafeBytes(of: bitsPerSample.littleEndian) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [UInt8]("data".utf8))
-        let dataSize = Int32(numSamples * 2)
-        withUnsafeBytes(of: dataSize.littleEndian) { data.append(contentsOf: $0) }
-        samples.withUnsafeBytes { data.append(contentsOf: $0) }
-        return data
-    }
 }
 
 // MARK: — Authentic 7-Segment Viewfinder Quartz Date Overlay
