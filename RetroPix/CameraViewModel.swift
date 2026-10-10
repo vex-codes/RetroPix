@@ -242,15 +242,6 @@ final class CameraViewModel {
         }
     }
 
-    var exposureCount: Int = {
-        let val = UserDefaults.standard.integer(forKey: "exposureCount")
-        return val > 0 ? val : 1
-    }() {
-        didSet {
-            UserDefaults.standard.set(exposureCount, forKey: "exposureCount")
-        }
-    }
-
     var frameBorderEnabled: Bool = UserDefaults.standard.object(forKey: "frameBorderEnabled") as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(frameBorderEnabled, forKey: "frameBorderEnabled")
@@ -472,17 +463,6 @@ final class CameraViewModel {
     func cycleEngineMode() {
         engineMode = (engineMode == .pixel8Bit) ? .aesthetic : .pixel8Bit
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    }
-
-    /// Advances mechanical film exposure counter (1..36)
-    func advanceFilm() {
-        if exposureCount >= 36 {
-            exposureCount = 1
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        } else {
-            exposureCount += 1
-            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-        }
     }
 
     /// Cycles film frame style: OFF → KEYLINE → 35MM SPROCKET → INSTANT CARD

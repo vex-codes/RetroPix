@@ -325,10 +325,8 @@ struct ContentView: View {
                         orientation: orientationObserver.orientation,
                         dateStampMode: vm.dateStampMode,
                         frameBorderEnabled: vm.frameBorderEnabled,
-                        filmFrameStyle: vm.filmFrameStyle,
-                        exposureCount: vm.exposureCount
+                        filmFrameStyle: vm.filmFrameStyle
                     )
-                    vm.advanceFilm()
                 }
             }
         } else {
@@ -351,10 +349,8 @@ struct ContentView: View {
                     orientation: orientationObserver.orientation,
                     dateStampMode: vm.dateStampMode,
                     frameBorderEnabled: vm.frameBorderEnabled,
-                    filmFrameStyle: vm.filmFrameStyle,
-                    exposureCount: vm.exposureCount
+                    filmFrameStyle: vm.filmFrameStyle
                 )
-                vm.advanceFilm()
             }
         }
     }
@@ -451,7 +447,7 @@ private struct PortraitDeck: View {
 
                 let zoomStr = vm.zoomFactor > 1.05 ? String(format: "%.1f× ", vm.zoomFactor) : ""
                 let sensorStr = vm.engineMode == .pixel8Bit ? "BAYER SENSOR" : "CCD MATRIX"
-                Text("\(zoomStr)\(sensorStr)  EXP \(String(format: "%02d", vm.exposureCount))/36")
+                Text("\(zoomStr)\(sensorStr)")
                     .font(RetroTheme.mono(8, weight: .regular))
                     .foregroundStyle(RetroTheme.dimText)
             }
@@ -805,7 +801,6 @@ final class ShutterAudioService: @unchecked Sendable {
             shutterPlayer.currentTime = 0
             shutterPlayer.play()
         }
-        AudioServicesPlaySystemSound(1108)
     }
 
     func playBeep(urgent: Bool = false) {
@@ -858,28 +853,43 @@ final class ShutterAudioService: @unchecked Sendable {
 
     private func createShutterWav() -> Data {
         let sampleRate: Int32 = 44100
-        let duration: Double = 0.085
+        let duration: Double = 0.100
         let numSamples = Int(Double(sampleRate) * duration)
         var samples = [Int16](repeating: 0, count: numSamples)
 
         for i in 0..<numSamples {
             let t = Double(i) / Double(sampleRate)
             var s: Double = 0
-            if t < 0.02 {
-                let decay = exp(-t * 350.0)
-                let freq = 1400.0 - t * 30000.0
-                let noise = Double.random(in: -0.3...0.3)
-                s += (sin(2.0 * .pi * freq * t) + noise) * decay * 0.95
+
+            // 1. Primary mechanical leaf-shutter release snap (t: 0 .. 25ms)
+            if t < 0.025 {
+                let env1 = exp(-t * 260.0)
+                let snapTone = sin(2.0 * .pi * 3150.0 * t) * 0.45 + sin(2.0 * .pi * 1780.0 * t) * 0.35
+                let snapNoise = Double.random(in: -0.85...0.85) * (t < 0.003 ? 1.0 : exp(-t * 400.0))
+                s += (snapTone + snapNoise * 0.65) * env1
             }
-            if t >= 0.032 && t < 0.075 {
-                let dt = t - 0.032
-                let decay = exp(-dt * 250.0)
-                let freq = 900.0 - dt * 15000.0
-                let noise = Double.random(in: -0.2...0.2)
-                s += (sin(2.0 * .pi * freq * dt) + noise) * decay * 0.9
+
+            // 2. Secondary blade closure & catch click (t: 26ms .. 70ms)
+            if t >= 0.026 && t < 0.075 {
+                let dt = t - 0.026
+                let env2 = exp(-dt * 240.0)
+                let clickTone = sin(2.0 * .pi * 2450.0 * dt) * 0.40 + sin(2.0 * .pi * 1350.0 * dt) * 0.30
+                let clickNoise = Double.random(in: -0.65...0.65) * (dt < 0.003 ? 0.9 : exp(-dt * 350.0))
+                s += (clickTone + clickNoise * 0.55) * env2 * 0.85
             }
-            s = max(-1.0, min(1.0, s))
-            samples[i] = Int16(s * 32767.0)
+
+            // 3. Compact camera body resonance (solid mechanical body weight)
+            if t < 0.075 {
+                let bodyEnv = exp(-t * 75.0)
+                s += sin(2.0 * .pi * 390.0 * t) * bodyEnv * 0.22
+            }
+
+            // Micro-envelope to avoid DC pops at boundaries
+            let masterEnv = min(1.0, t / 0.001) * min(1.0, (duration - t) / 0.008)
+            s *= masterEnv
+
+            let warmS = tanh(s * 1.35)
+            samples[i] = Int16(warmS * 32767.0)
         }
 
         var data = Data()

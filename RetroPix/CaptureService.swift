@@ -40,8 +40,7 @@ enum CaptureService {
         orientation: DeviceOrientation = .portrait,
         dateStampMode: DateStampMode = .off,
         frameBorderEnabled: Bool = false,
-        filmFrameStyle: FilmFrameStyle = .classicKeyline,
-        exposureCount: Int = 1
+        filmFrameStyle: FilmFrameStyle = .classicKeyline
     ) async throws {
         guard await verifyPhotoPermission() else {
             throw PhotoCaptureError.permissionDenied
@@ -116,42 +115,57 @@ enum CaptureService {
             photoRect = CGRect(x: 0, y: 0, width: targetW, height: targetH)
 
         case .classicKeyline:
-            let inset = max(24.0, CGFloat(min(targetW, targetH)) * 0.045)
+            // Uniform percentage inset preserves exact capture aspect ratio without any warping
+            let marginFrac: CGFloat = 0.045
+            let photoW = CGFloat(targetW) * (1.0 - 2.0 * marginFrac)
+            let photoH = CGFloat(targetH) * (1.0 - 2.0 * marginFrac)
+            let photoX = (CGFloat(targetW) - photoW) * 0.5
+            let photoY = (CGFloat(targetH) - photoH) * 0.5
             ctx.setFillColor(red: 0.96, green: 0.95, blue: 0.92, alpha: 1.0)
             ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
-            photoRect = CGRect(x: inset, y: inset, width: CGFloat(targetW) - inset * 2.0, height: CGFloat(targetH) - inset * 2.0)
+            photoRect = CGRect(x: photoX, y: photoY, width: photoW, height: photoH)
 
         case .sprocket35:
-            let rebateH = max(72.0, CGFloat(min(targetW, targetH)) * 0.088)
-            let rebateW = max(24.0, CGFloat(min(targetW, targetH)) * 0.032)
+            // Top/bottom rebate with aspect-fit maintains exact capture aspect ratio
+            let rebateH = max(64.0, CGFloat(targetH) * 0.082)
+            let rebateW = max(28.0, CGFloat(targetW) * 0.036)
+            let maxW = CGFloat(targetW) - rebateW * 2.0
+            let maxH = CGFloat(targetH) - rebateH * 2.0
+            let fitScale = min(maxW / CGFloat(targetW), maxH / CGFloat(targetH))
+            let photoW = CGFloat(targetW) * fitScale
+            let photoH = CGFloat(targetH) * fitScale
+            let photoX = (CGFloat(targetW) - photoW) * 0.5
+            let photoY = (CGFloat(targetH) - photoH) * 0.5
             ctx.setFillColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1.0)
             ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
-            photoRect = CGRect(x: rebateW, y: rebateH, width: CGFloat(targetW) - rebateW * 2.0, height: CGFloat(targetH) - rebateH * 2.0)
+            photoRect = CGRect(x: photoX, y: photoY, width: photoW, height: photoH)
 
         case .instantCard:
-            let margin = max(36.0, CGFloat(min(targetW, targetH)) * 0.052)
-            let bottomChin = margin * 2.6
+            // Instant card with iconic bottom chin — aspect-fit into upper frame with zero warping
+            let sideMargin = max(36.0, CGFloat(targetW) * 0.055)
+            let topMargin = sideMargin
+            let bottomChin = sideMargin * 2.7
+            let availW = CGFloat(targetW) - sideMargin * 2.0
+            let availH = CGFloat(targetH) - topMargin - bottomChin
+            let fitScale = min(availW / CGFloat(targetW), availH / CGFloat(targetH))
+            let photoW = CGFloat(targetW) * fitScale
+            let photoH = CGFloat(targetH) * fitScale
+            let photoX = (CGFloat(targetW) - photoW) * 0.5
+            let photoY = bottomChin + (availH - photoH) * 0.5
             ctx.setFillColor(red: 0.98, green: 0.97, blue: 0.95, alpha: 1.0)
             ctx.fill(CGRect(x: 0, y: 0, width: targetW, height: targetH))
-            photoRect = CGRect(x: margin, y: bottomChin, width: CGFloat(targetW) - margin * 2.0, height: CGFloat(targetH) - margin - bottomChin)
+            photoRect = CGRect(x: photoX, y: photoY, width: photoW, height: photoH)
         }
 
         ctx.saveGState()
         if angle != 0 {
-            ctx.translateBy(x: CGFloat(targetW) / 2.0, y: CGFloat(targetH) / 2.0)
+            // Rotate around photoRect's center so photo stays strictly inside photoRect with zero warping
+            ctx.translateBy(x: photoRect.midX, y: photoRect.midY)
             ctx.rotate(by: angle)
 
             let isQuarterTurn = (orientation == .landscapeLeft || orientation == .landscapeRight)
-            let drawWidth: CGFloat
-            let drawHeight: CGFloat
-
-            if activeStyle != .off {
-                drawWidth  = isQuarterTurn ? photoRect.height : photoRect.width
-                drawHeight = isQuarterTurn ? photoRect.width : photoRect.height
-            } else {
-                drawWidth  = CGFloat(drawW)
-                drawHeight = CGFloat(drawH)
-            }
+            let drawWidth  = isQuarterTurn ? photoRect.height : photoRect.width
+            let drawHeight = isQuarterTurn ? photoRect.width : photoRect.height
 
             ctx.draw(cgSource, in: CGRect(
                 x: -drawWidth / 2.0,
@@ -170,7 +184,6 @@ enum CaptureService {
             targetW: targetW,
             targetH: targetH,
             photoRect: photoRect,
-            exposureCount: exposureCount,
             in: ctx
         )
 
@@ -632,7 +645,6 @@ enum FilmFrameRenderer {
         targetW: Int,
         targetH: Int,
         photoRect: CGRect,
-        exposureCount: Int,
         in ctx: CGContext
     ) {
         switch style {

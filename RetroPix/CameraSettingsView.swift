@@ -196,36 +196,6 @@ struct CameraSettingsView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 12)
 
-                        // Film Roll Exposure Counter
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("ANALOG FILM ROLL")
-                                    .font(RetroTheme.mono(11))
-                                    .foregroundStyle(RetroTheme.text)
-                                Text("Frame counter: EXP \(String(format: "%02d", vm.exposureCount)) / 36")
-                                    .font(RetroTheme.mono(8, weight: .regular))
-                                    .foregroundStyle(RetroTheme.dimText)
-                            }
-                            Spacer()
-                            Button {
-                                vm.exposureCount = 1
-                                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            } label: {
-                                Text("RELOAD ROLL")
-                                    .font(RetroTheme.mono(9, weight: .bold))
-                                    .foregroundStyle(RetroTheme.amber)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 3)
-                                            .stroke(RetroTheme.amber.opacity(0.6), lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
-
                         // Self-Timer Selector
                         VStack(alignment: .leading, spacing: 6) {
                             Text("SELF-TIMER")
