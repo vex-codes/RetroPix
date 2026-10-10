@@ -869,7 +869,7 @@ final class ShutterAudioService: @unchecked Sendable {
     }
 }
 
-// MARK: — Authentic 7-Segment Viewfinder Quartz Date Overlay
+// MARK: — Authentic Viewfinder Film Date Overlay (Apple Chancery)
 
 private struct ViewfinderQuartzDateStamp: View {
     let mode: DateStampMode
@@ -879,8 +879,10 @@ private struct ViewfinderQuartzDateStamp: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
             let stampText = formatDate(timeline.date)
-            let stampH: CGFloat = 12.0
-            let stampW = QuartzDateStampRenderer.calculateWidth(text: stampText, digitHeight: stampH)
+            let stampFontSize: CGFloat = 13.0
+            let stampSize = QuartzDateStampRenderer.calculateSize(text: stampText, digitHeight: stampFontSize)
+            let stampW = stampSize.width
+            let stampH = stampSize.height
 
             let isQuarterTurn = (orientation == .landscapeLeft || orientation == .landscapeRight)
             let boxW = isQuarterTurn ? stampH : stampW
@@ -893,7 +895,8 @@ private struct ViewfinderQuartzDateStamp: View {
                     text: stampText,
                     color: (mode == .orange)
                         ? UIColor(red: 1.0, green: 0.48, blue: 0.02, alpha: 0.98)
-                        : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98)
+                        : UIColor(red: 0.10, green: 0.98, blue: 0.38, alpha: 0.98),
+                    fontSize: stampFontSize
                 )
                 .frame(width: stampW, height: stampH)
                 .rotationEffect(.degrees(rotation))
@@ -938,6 +941,7 @@ private struct ViewfinderQuartzDateStamp: View {
 private struct QuartzDateStampCanvas: UIViewRepresentable {
     let text: String
     let color: UIColor
+    let fontSize: CGFloat
 
     func makeUIView(context: Context) -> QuartzDateStampUIView {
         let v = QuartzDateStampUIView()
@@ -945,13 +949,15 @@ private struct QuartzDateStampCanvas: UIViewRepresentable {
         v.isOpaque = false
         v.text = text
         v.color = color
+        v.fontSize = fontSize
         return v
     }
 
     func updateUIView(_ uiView: QuartzDateStampUIView, context: Context) {
-        if uiView.text != text || uiView.color != color {
+        if uiView.text != text || uiView.color != color || uiView.fontSize != fontSize {
             uiView.text = text
             uiView.color = color
+            uiView.fontSize = fontSize
             uiView.setNeedsDisplay()
         }
     }
@@ -960,17 +966,16 @@ private struct QuartzDateStampCanvas: UIViewRepresentable {
 private final class QuartzDateStampUIView: UIView {
     var text: String = ""
     var color: UIColor = .orange
+    var fontSize: CGFloat = 13.0
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(), !text.isEmpty else { return }
-        let h = rect.height
         QuartzDateStampRenderer.draw(
             text: text,
             in: ctx,
             origin: CGPoint(x: 0, y: 0),
-            digitHeight: h,
-            color: color,
-            withGhosting: true
+            digitHeight: fontSize,
+            color: color
         )
     }
 }

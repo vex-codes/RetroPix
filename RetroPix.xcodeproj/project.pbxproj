@@ -261,6 +261,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix requires camera access to process and preview real-time 8-bit dithered video.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Used strictly to save your captured retro photos to your photo library.";
+				INFOPLIST_KEY_UIAppFonts = "Apple\\ Chancery.ttf";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -296,6 +297,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RetroPix requires camera access to process and preview real-time 8-bit dithered video.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Used strictly to save your captured retro photos to your photo library.";
+				INFOPLIST_KEY_UIAppFonts = "Apple\\ Chancery.ttf";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
