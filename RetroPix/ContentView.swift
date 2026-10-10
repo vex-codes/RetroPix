@@ -184,9 +184,6 @@ struct ContentView: View {
         .onChange(of: vm.isFisheyeEnabled) { _, new in
             renderer?.barrelDistortion = new ? 0.22 : 0.0
         }
-        .onChange(of: vm.isFlashOn) { _, new in
-            renderer?.isFlashActive = new
-        }
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(vm: vm)
         }
@@ -237,7 +234,6 @@ struct ContentView: View {
         renderer?.updatePalette(vm.activePalette)
         renderer?.ditherSpread = vm.ditherIntensity
         renderer?.ditherAlgorithm = vm.ditherAlgorithm.rawIndex
-        renderer?.isFlashActive = vm.isFlashOn
         renderer?.lightLeakStrength = vm.isLightLeakEnabled ? 0.75 : 0.0
         renderer?.barrelDistortion = vm.isFisheyeEnabled ? 0.22 : 0.0
     }
@@ -771,11 +767,11 @@ private struct CountdownOSDOverlay: View {
     }
 }
 
-// MARK: — Shutter Audio Service (in-memory mechanical click + retro timer beeps)
+// MARK: — Shutter Audio Service (uploaded camera shutter audio + retro timer beeps)
 
 final class ShutterAudioService: @unchecked Sendable {
     static let shared = ShutterAudioService()
-    private var shutterPlayer: AVAudioPlayer?
+    private var shutterPlayers: [AVAudioPlayer] = []
     private var normalBeepPlayer: AVAudioPlayer?
     private var urgentBeepPlayer: AVAudioPlayer?
 
@@ -783,9 +779,24 @@ final class ShutterAudioService: @unchecked Sendable {
         try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
 
-        let wav = createShutterWav()
-        shutterPlayer = try? AVAudioPlayer(data: wav)
-        shutterPlayer?.prepareToPlay()
+        // Load authentic user-uploaded camera shutter sounds
+        let soundNames = [
+            "shutter_1",
+            "shutter_2",
+            "kave_msri-camera-shutter-314056",
+            "irinairinafomicheva-camera-13695"
+        ]
+        var seenNames = Set<String>()
+        for name in soundNames {
+            if let url = Bundle.main.url(forResource: name, withExtension: "mp3") {
+                let filename = url.lastPathComponent
+                if !seenNames.contains(filename), let player = try? AVAudioPlayer(contentsOf: url) {
+                    player.prepareToPlay()
+                    shutterPlayers.append(player)
+                    seenNames.insert(filename)
+                }
+            }
+        }
 
         let normalWav = createToneWav(freq: 1200.0, duration: 0.05)
         normalBeepPlayer = try? AVAudioPlayer(data: normalWav)
@@ -796,11 +807,12 @@ final class ShutterAudioService: @unchecked Sendable {
         urgentBeepPlayer?.prepareToPlay()
     }
 
+    /// Plays a random authentic camera shutter sound on picture capture
     func play() {
-        if let shutterPlayer {
-            shutterPlayer.currentTime = 0
-            shutterPlayer.play()
-        }
+        guard !shutterPlayers.isEmpty else { return }
+        let player = shutterPlayers.randomElement()!
+        player.currentTime = 0
+        player.play()
     }
 
     func playBeep(urgent: Bool = false) {
@@ -850,73 +862,6 @@ final class ShutterAudioService: @unchecked Sendable {
         samples.withUnsafeBytes { data.append(contentsOf: $0) }
         return data
     }
-
-    private func createShutterWav() -> Data {
-        let sampleRate: Int32 = 44100
-        let duration: Double = 0.100
-        let numSamples = Int(Double(sampleRate) * duration)
-        var samples = [Int16](repeating: 0, count: numSamples)
-
-        for i in 0..<numSamples {
-            let t = Double(i) / Double(sampleRate)
-            var s: Double = 0
-
-            // 1. Primary mechanical leaf-shutter release snap (t: 0 .. 25ms)
-            if t < 0.025 {
-                let env1 = exp(-t * 260.0)
-                let snapTone = sin(2.0 * .pi * 3150.0 * t) * 0.45 + sin(2.0 * .pi * 1780.0 * t) * 0.35
-                let snapNoise = Double.random(in: -0.85...0.85) * (t < 0.003 ? 1.0 : exp(-t * 400.0))
-                s += (snapTone + snapNoise * 0.65) * env1
-            }
-
-            // 2. Secondary blade closure & catch click (t: 26ms .. 70ms)
-            if t >= 0.026 && t < 0.075 {
-                let dt = t - 0.026
-                let env2 = exp(-dt * 240.0)
-                let clickTone = sin(2.0 * .pi * 2450.0 * dt) * 0.40 + sin(2.0 * .pi * 1350.0 * dt) * 0.30
-                let clickNoise = Double.random(in: -0.65...0.65) * (dt < 0.003 ? 0.9 : exp(-dt * 350.0))
-                s += (clickTone + clickNoise * 0.55) * env2 * 0.85
-            }
-
-            // 3. Compact camera body resonance (solid mechanical body weight)
-            if t < 0.075 {
-                let bodyEnv = exp(-t * 75.0)
-                s += sin(2.0 * .pi * 390.0 * t) * bodyEnv * 0.22
-            }
-
-            // Micro-envelope to avoid DC pops at boundaries
-            let masterEnv = min(1.0, t / 0.001) * min(1.0, (duration - t) / 0.008)
-            s *= masterEnv
-
-            let warmS = tanh(s * 1.35)
-            samples[i] = Int16(warmS * 32767.0)
-        }
-
-        var data = Data()
-        data.append(contentsOf: [UInt8]("RIFF".utf8))
-        let fileSize = Int32(36 + numSamples * 2)
-        withUnsafeBytes(of: fileSize.littleEndian) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [UInt8]("WAVEfmt ".utf8))
-        let subchunk1Size: Int32 = 16
-        withUnsafeBytes(of: subchunk1Size.littleEndian) { data.append(contentsOf: $0) }
-        let audioFormat: Int16 = 1
-        withUnsafeBytes(of: audioFormat.littleEndian) { data.append(contentsOf: $0) }
-        let numChannels: Int16 = 1
-        withUnsafeBytes(of: numChannels.littleEndian) { data.append(contentsOf: $0) }
-        withUnsafeBytes(of: sampleRate.littleEndian) { data.append(contentsOf: $0) }
-        let byteRate = sampleRate * 2
-        withUnsafeBytes(of: byteRate.littleEndian) { data.append(contentsOf: $0) }
-        let blockAlign: Int16 = 2
-        withUnsafeBytes(of: blockAlign.littleEndian) { data.append(contentsOf: $0) }
-        let bitsPerSample: Int16 = 16
-        withUnsafeBytes(of: bitsPerSample.littleEndian) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [UInt8]("data".utf8))
-        let dataSize = Int32(numSamples * 2)
-        withUnsafeBytes(of: dataSize.littleEndian) { data.append(contentsOf: $0) }
-        samples.withUnsafeBytes { data.append(contentsOf: $0) }
-        return data
-    }
-
 }
 
 // MARK: — Authentic 7-Segment Viewfinder Quartz Date Overlay

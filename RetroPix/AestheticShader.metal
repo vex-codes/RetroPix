@@ -254,15 +254,6 @@ kernel void aestheticKernel(
     // Vignette: I·(1 − k·r^2.5)
     g *= 1.0 - u.fx2.x * pow(r, 2.5);
 
-    // Direct flash point-source falloff & warm skin specular bloom
-    float flashActive = u.highlightTint.w;
-    if (flashActive > 0.0) {
-        float falloff = 1.0 - 0.35 * flashActive * smoothstep(0.18, 0.95, r);
-        g *= falloff;
-        float spec = smoothstep(0.68, 0.98, luma(g)) * flashActive;
-        g += float3(0.08, 0.045, 0.01) * spec;
-    }
-
     // Procedural warm film light leak / edge burn
     float leakStrength = u.m0.w;
     if (leakStrength > 0.0) {
