@@ -97,8 +97,8 @@ struct ContentView: View {
             }
             .ignoresSafeArea(edges: .bottom)
 
-            // Shutter white flash overlay
-            Color.white
+            // Shutter white flash & Retina screen flash overlay (True Tone warm-white)
+            Color(red: 1.0, green: 0.99, blue: 0.95)
                 .opacity(shutterFlash)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
@@ -206,7 +206,7 @@ struct ContentView: View {
         cameraManager.switchCamera(toFront: vm.isFrontCamera) { actualFront in
             vm.hasTorch = actualFront ? false : cameraManager.hasTorch
             if actualFront {
-                vm.isFlashOn = false
+                cameraManager.setTorch(false)
             }
             if actualFront != vm.isFrontCamera {
                 vm.setFrontCamera(actualFront)
@@ -286,25 +286,60 @@ struct ContentView: View {
         guard !isCapturing, let renderer else { return }
         isCapturing = true
 
-        // Play authentic mechanical shutter click
-        ShutterAudioService.shared.play()
+        let useRetinaFlash = vm.isFrontCamera && vm.isFlashOn
 
-        // Screen white flash: high opacity immediately, fade out smoothly on next tick
-        shutterFlash = 1.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.easeOut(duration: 0.22)) {
-                shutterFlash = 0.0
+        if useRetinaFlash {
+            // Front camera Retina Screen Flash: max brightness + True Tone warm illumination
+            let originalBrightness = UIScreen.main.brightness
+            UIScreen.main.brightness = 1.0
+
+            withAnimation(.easeInOut(duration: 0.06)) {
+                shutterFlash = 1.0
             }
-        }
 
-        Task {
-            defer { isCapturing = false }
-            try? await CaptureService.capture(
-                from: renderer,
-                orientation: orientationObserver.orientation,
-                dateStampMode: vm.dateStampMode,
-                frameBorderEnabled: vm.frameBorderEnabled
-            )
+            // 180ms window allows camera sensor auto-exposure to meter and capture illuminated subject
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                ShutterAudioService.shared.play()
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+                Task {
+                    defer {
+                        UIScreen.main.brightness = originalBrightness
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            shutterFlash = 0.0
+                        }
+                        isCapturing = false
+                    }
+                    try? await CaptureService.capture(
+                        from: renderer,
+                        orientation: orientationObserver.orientation,
+                        dateStampMode: vm.dateStampMode,
+                        frameBorderEnabled: vm.frameBorderEnabled
+                    )
+                }
+            }
+        } else {
+            // Standard capture
+            ShutterAudioService.shared.play()
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+            // Screen white flash: high opacity immediately, fade out smoothly on next tick
+            shutterFlash = 1.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    shutterFlash = 0.0
+                }
+            }
+
+            Task {
+                defer { isCapturing = false }
+                try? await CaptureService.capture(
+                    from: renderer,
+                    orientation: orientationObserver.orientation,
+                    dateStampMode: vm.dateStampMode,
+                    frameBorderEnabled: vm.frameBorderEnabled
+                )
+            }
         }
     }
 }
@@ -454,16 +489,22 @@ private struct PortraitDeck: View {
 
             // Row 4: Flash (Left) | Shutter (Center)
             HStack(spacing: 0) {
-                // Flash Toggle (Left)
+                // Flash Toggle (Left) — physical torch on rear, Retina Screen Flash on front
                 FlashButton(
                     isFlashOn: vm.isFlashOn,
-                    isEnabled: vm.hasTorch,
+                    isEnabled: vm.isFlashAvailable,
                     rotation: rotation
                 ) {
-                    guard vm.hasTorch else { return }
-                    let state = cameraManager.toggleTorch()
-                    vm.isFlashOn = state
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    guard vm.isFlashAvailable else { return }
+                    if vm.isFrontCamera {
+                        vm.isFlashOn.toggle()
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } else {
+                        guard vm.hasTorch else { return }
+                        let state = cameraManager.toggleTorch()
+                        vm.isFlashOn = state
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
                 }
                 .frame(width: 64, alignment: .center)
 

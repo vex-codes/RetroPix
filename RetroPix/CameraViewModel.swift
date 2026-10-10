@@ -168,7 +168,6 @@ final class CameraViewModel {
             rearCameraRatio = activeRatio
             activeRatio = .ratio4_3
             hasTorch = false
-            isFlashOn = false
         } else {
             activeRatio = rearCameraRatio
             hasTorch = true
@@ -235,7 +234,24 @@ final class CameraViewModel {
     }
 
     var hasTorch: Bool = true
-    var isFlashOn: Bool = false
+    var isFrontFlashOn: Bool = false
+    var isBackFlashOn: Bool = false
+
+    /// Flash is available via physical torch on rear camera or Retina Screen Flash on front camera
+    var isFlashAvailable: Bool {
+        isFrontCamera ? true : hasTorch
+    }
+
+    var isFlashOn: Bool {
+        get { isFrontCamera ? isFrontFlashOn : isBackFlashOn }
+        set {
+            if isFrontCamera {
+                isFrontFlashOn = newValue
+            } else {
+                isBackFlashOn = newValue
+            }
+        }
+    }
 
     var activePalette: Palette {
         guard !palettes.isEmpty else { return Palette.def }
